@@ -202,10 +202,22 @@ and passed.
   NaiveShop; `--target till` reverts with `Overspend(1000000000000000, 0)`.
 - **Videos:** pitch (≤ 3:00) and technical walkthrough, scripted in
   [docs/VIDEO_SCRIPTS.md](docs/VIDEO_SCRIPTS.md). _Links: to be added after recording._
-- **Sepolia:** `make deploy-sepolia` deploys, records example transactions
-  (batched checkout, redeem, refund, withdraw) in
-  `deployments/sepolia.json`, and verifies bytecode. _Addresses: to be added
-  after deployment (see Limitations)._
+- **Live app:** https://app-eight-gamma-97.vercel.app (Sepolia).
+- **Sepolia** (deployed with `make deploy-sepolia`; on-chain code verified
+  against a fresh build with `scripts/verify-bytecode.ts`):
+
+  | | Address / transaction |
+  |---|---|
+  | ShopFactory | [`0xa4feba51e2d02816dd3b5d057692edc08696ceb9`](https://sepolia.etherscan.io/address/0xa4feba51e2d02816dd3b5d057692edc08696ceb9) |
+  | Demo shop "Uyo Dev Meetup" | [`0x7878b2E1F9842a8a45d8f1614D4e2eCE3fBbb0C7`](https://sepolia.etherscan.io/address/0x7878b2E1F9842a8a45d8f1614D4e2eCE3fBbb0C7) |
+  | Lab: NaiveShop | [`0xcb85bde6ef9978a7378017abd6cb92046b359c16`](https://sepolia.etherscan.io/address/0xcb85bde6ef9978a7378017abd6cb92046b359c16) |
+  | Lab: Till shop | [`0x8deb2466d920461c9129406d45b8FacEa8A2f600`](https://sepolia.etherscan.io/address/0x8deb2466d920461c9129406d45b8FacEa8A2f600) |
+  | Batched checkout (2 tickets + shirt + tip, one tx) | [`0xb3282737…`](https://sepolia.etherscan.io/tx/0xb3282737fc9224e292a4a90695f9a57d00d5fa5236523de130cc77ab566cfcfc) |
+  | Redeem (EIP-712 check-in) | [`0x17017ef3…`](https://sepolia.etherscan.io/tx/0x17017ef3a1b6909086b66922bc2258cbfd3472fc6b98171cdabbde72c0bbb28b) |
+  | Refund after cancel | [`0x292c1bbd…`](https://sepolia.etherscan.io/tx/0x292c1bbd7330c017d79e13ae55a66933d3fb03b5ce060a3bd23e3b699b54e2d8) |
+  | Withdraw | [`0x99770ae2…`](https://sepolia.etherscan.io/tx/0x99770ae21783169e74726fd77195c8f9e6cc5e5cedf01d000ca2b0209ebda6a1) |
+
+  Full record: [`deployments/sepolia.json`](deployments/sepolia.json).
 
 Gas (anvil): Till adds about **1.2k gas per batched entry** plus ~1.4k per
 batch over identical logic without it; `redeem` with EIP-712 + ecrecover costs
@@ -215,10 +227,6 @@ about 76k gas. Contract sizes: `Shop` 11.3 KB, `ShopFactory` 12.3 KB runtime
 ## Limitations
 
 - Fe is pre-production and this code is unaudited. Testnet only.
-- **Not yet deployed to Sepolia from the build environment.** Its network
-  policy blocked every Sepolia RPC and it had no funded key. The scripts are
-  ready: put a funded `DEPLOYER_PRIVATE_KEY` in `.env` and run
-  `make deploy-sepolia`.
 - Burner keys live in `localStorage`; fine for test ETH only. "Copy/Download
   key" is the backup.
 - Per-wallet caps are Sybil-weak (one person, many wallets).
