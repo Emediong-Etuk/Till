@@ -1,0 +1,831 @@
+// Layer 2: EVM integration tests for `TransientTill` through `TillProbe`.
+//
+// Each `fe test` test runs as one transaction, so transient storage persists
+// across the `evm.call`s of one test: the cross-frame tests rely on that.
+use core::abi::Encode
+use core::error::ErrorVariant
+use core::message::MsgVariant
+use core::ptr::MemVec
+use std::abi::{Bytes, DynArray, Sol, dyn_array_from}
+use std::evm::{Call, CallOutcome, Evm, encode_error, encode_msg_calldata, ether, has_selector, wei}
+use std::evm::multicall::MulticallMsg
+use ingot::{
+    ExternalCallInBatch,
+    ForeignFrame,
+    NestedBatch,
+    Overspend,
+    Payment,
+    Till,
+    TillState,
+    TransientTill,
+    Unspent,
+    charge,
+    entry,
+}
+use ingot::probe::{ProbeMsg, TillProbe}
+
+fn deploy() -> Address uses (evm: mut Evm) {
+    evm.create2<TillProbe>(value: Wei::zero(), args: (), salt: 0)
+}
+
+fn state(_ probe: Address) -> TillState uses (evm: mut Evm) {
+    evm.call(
+        addr: probe,
+        gas: 100000,
+        value: Wei::zero(),
+        message: ProbeMsg::State {},
+    )
+}
+
+fn assert_clean(_ probe: Address) uses (evm: mut Evm) {
+    let s = state(probe)
+    assert!(s.left == Wei::zero())
+    assert!(!s.batching)
+    assert!(s.entries == 0)
+}
+
+fn balance_of(_ probe: Address, _ owner: Address) -> Wei uses (evm: mut Evm) {
+    evm.call(
+        addr: probe,
+        gas: 100000,
+        value: Wei::zero(),
+        message: ProbeMsg::BalanceOf { owner },
+    )
+}
+
+fn total(_ probe: Address) -> Wei uses (evm: mut Evm) {
+    evm.call(
+        addr: probe,
+        gas: 100000,
+        value: Wei::zero(),
+        message: ProbeMsg::Total {},
+    )
+}
+
+fn try_batch(_ probe: Address, value: Wei, data: own DynArray<Bytes>) -> CallOutcome
+uses (evm: mut Evm)
+{
+    with (Call = evm) {
+        evm.try_call(
+            addr: probe,
+            gas: 20000000,
+            value,
+            message: MulticallMsg::Multicall { data },
+        )
+    }
+}
+
+fn batch(_ probe: Address, value: Wei, data: own DynArray<Bytes>) -> DynArray<Bytes>
+uses (evm: mut Evm)
+{
+    evm.call(
+        addr: probe,
+        gas: 20000000,
+        value,
+        message: MulticallMsg::Multicall { data },
+    )
+}
+
+fn try_deposit(_ probe: Address, value: Wei, amount: Wei) -> CallOutcome
+uses (evm: mut Evm)
+{
+    with (Call = evm) {
+        evm.try_call(
+            addr: probe,
+            gas: 300000,
+            value,
+            message: ProbeMsg::Deposit { amount },
+        )
+    }
+}
+
+/// The call failed with exactly the revert payload of `error`.
+fn assert_reverted_with<E>(_ out: own CallOutcome, _ error: own E)
+where E: ErrorVariant<Sol> + Encode<Sol>
+{
+    assert!(!out.success())
+    let expected = encode_error(error)
+    assert!(
+        Bytes::from_payload(source: out.returndata())
+            == Bytes::from_payload(source: expected.span()),
+    )
+}
+
+fn assert_selector<E>(_ out: own CallOutcome) where E: ErrorVariant<Sol> {
+    assert!(!out.success())
+    assert!(has_selector<E>(out.returndata()))
+}
+
+/// `n` deposits of `each` wei.
+fn deposits(n: u256, each: Wei) -> DynArray<Bytes> {
+    var v = MemVec<Bytes>::with_capacity(n.downcast_unchecked())
+    var i: u256 = 0
+    while i < n {
+        v.push(entry(ProbeMsg::Deposit { amount: each }))
+        i += 1
+    }
+    DynArray::from_mem_vec(v)
+}
+
+// ---------------------------------------------------------------------------
+// Direct calls (no batch)
+// ---------------------------------------------------------------------------
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn direct_exact_payment_is_credited() uses (evm: mut Evm) {
+    let p = deploy()
+    let paid: Wei = evm
+        .call(
+            addr: p,
+            gas: 300000,
+            value: ether(2),
+            message: ProbeMsg::Deposit { amount: ether(2) },
+        )
+    assert!(paid == ether(2))
+    assert!(balance_of(p, evm.address()) == ether(2))
+    assert!(evm.balance(p) == ether(2))
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn direct_overpay_reverts_unspent() uses (evm: mut Evm) {
+    let p = deploy()
+    assert_reverted_with(
+        try_deposit(p, value: ether(3), amount: ether(2)),
+        Unspent { left: ether(1) },
+    )
+    assert!(evm.balance(p) == Wei::zero())
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn direct_underpay_reverts_overspend() uses (evm: mut Evm) {
+    let p = deploy()
+    assert_reverted_with(
+        try_deposit(p, value: ether(1), amount: ether(2)),
+        Overspend { wanted: ether(2), left: ether(1) },
+    )
+    assert!(evm.balance(p) == Wei::zero())
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn direct_one_wei_over_reverts() uses (evm: mut Evm) {
+    let p = deploy()
+    assert_reverted_with(
+        try_deposit(p, value: wei(1001), amount: wei(1000)),
+        Unspent { left: wei(1) },
+    )
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn direct_one_wei_under_reverts() uses (evm: mut Evm) {
+    let p = deploy()
+    assert_reverted_with(
+        try_deposit(p, value: wei(999), amount: wei(1000)),
+        Overspend { wanted: wei(1000), left: wei(999) },
+    )
+}
+
+#[test]
+fn direct_zero_for_zero_is_fine() uses (evm: mut Evm) {
+    let p = deploy()
+    let paid: Wei = evm
+        .call(
+            addr: p,
+            gas: 300000,
+            value: Wei::zero(),
+            message: ProbeMsg::Deposit { amount: Wei::zero() },
+        )
+    assert!(paid == Wei::zero())
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn stray_value_to_zero_wei_handler_reverts_unspent() uses (evm: mut Evm) {
+    // `Note` is payable so it can join paid batches, but a direct call that
+    // sends it value has nothing to spend it on: the wei would be stuck.
+    let p = deploy()
+    with (Call = evm) {
+        let out = evm
+            .try_call(
+                addr: p,
+                gas: 300000,
+                value: wei(5),
+                message: ProbeMsg::Note { text: 1 },
+            )
+        assert_reverted_with(out, Unspent { left: wei(5) })
+    }
+    assert!(evm.balance(p) == Wei::zero())
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn value_to_non_metered_handler_reverts() uses (evm: mut Evm) {
+    let p = deploy()
+    with (Call = evm) {
+        let out = evm
+            .try_call(
+                addr: p,
+                gas: 300000,
+                value: wei(5),
+                message: ProbeMsg::BalanceOf { owner: evm.address() },
+            )
+        assert!(!out.success())
+    }
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn direct_buy_price_times_qty() uses (evm: mut Evm) {
+    let p = deploy()
+    let paid: Wei = evm
+        .call(
+            addr: p,
+            gas: 300000,
+            value: wei(21),
+            message: ProbeMsg::Buy { price: wei(7), qty: 3 },
+        )
+    assert!(paid == wei(21))
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn direct_buy_overflow_panics() uses (evm: mut Evm) {
+    let p = deploy()
+    with (Call = evm) {
+        let out = evm
+            .try_call(
+                addr: p,
+                gas: 300000,
+                value: wei(1),
+                message: ProbeMsg::Buy {
+                    price: wei(
+                        0x8000000000000000000000000000000000000000000000000000000000000000,
+                    ),
+                    qty: 2,
+                },
+            )
+        assert!(!out.success())
+        assert!(has_selector<std::evm::Panic>(out.returndata()))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Metered batches
+// ---------------------------------------------------------------------------
+
+#[test]
+fn batch_empty_zero_value_ok() uses (evm: mut Evm) {
+    let p = deploy()
+    let out = batch(p, value: Wei::zero(), data: DynArray::empty())
+    assert!(out.len() == 0)
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn batch_empty_with_value_reverts_unspent() uses (evm: mut Evm) {
+    let p = deploy()
+    assert_reverted_with(
+        try_batch(p, value: wei(1), data: DynArray::empty()),
+        Unspent { left: wei(1) },
+    )
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn batch_one_entry_exact() uses (evm: mut Evm) {
+    let p = deploy()
+    let out = batch(p, value: ether(1), data: deposits(n: 1, each: ether(1)))
+    assert!(out.len() == 1)
+    assert!(balance_of(p, evm.address()) == ether(1))
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn batch_two_entries_exact() uses (evm: mut Evm) {
+    let p = deploy()
+    let _ = batch(p, value: ether(2), data: deposits(n: 2, each: ether(1)))
+    assert!(balance_of(p, evm.address()) == ether(2))
+    assert!(evm.balance(p) == ether(2))
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn batch_ten_entries_exact() uses (evm: mut Evm) {
+    let p = deploy()
+    let _ = batch(
+        p,
+        value: wei(10 * 777),
+        data: deposits(n: 10, each: wei(777)),
+    )
+    assert!(balance_of(p, evm.address()) == wei(7770))
+    assert!(total(p) == evm.balance(p))
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn batch_fifty_entries_exact() uses (evm: mut Evm) {
+    let p = deploy()
+    let _ = batch(p, value: wei(50 * 3), data: deposits(n: 50, each: wei(3)))
+    assert!(balance_of(p, evm.address()) == wei(150))
+    assert!(total(p) == evm.balance(p))
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn batch_double_count_reverts_overspend() uses (evm: mut Evm) {
+    // The exploit: pay once, deposit five times.
+    let p = deploy()
+    assert_reverted_with(
+        try_batch(p, value: ether(1), data: deposits(n: 5, each: ether(1))),
+        Overspend { wanted: ether(1), left: Wei::zero() },
+    )
+    assert!(balance_of(p, evm.address()) == Wei::zero())
+    assert!(evm.balance(p) == Wei::zero())
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn batch_overspend_by_one_wei() uses (evm: mut Evm) {
+    let p = deploy()
+    assert_reverted_with(
+        try_batch(p, value: wei(5), data: deposits(n: 2, each: wei(3))),
+        Overspend { wanted: wei(3), left: wei(2) },
+    )
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn batch_unspent_reverts() uses (evm: mut Evm) {
+    let p = deploy()
+    assert_reverted_with(
+        try_batch(p, value: ether(2), data: deposits(n: 1, each: ether(1))),
+        Unspent { left: ether(1) },
+    )
+    assert!(evm.balance(p) == Wei::zero())
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn batch_mixed_handlers_exact() uses (evm: mut Evm) {
+    let p = deploy()
+    let data = dyn_array_from(
+        [
+            entry(ProbeMsg::Deposit { amount: wei(100) }),
+            entry(ProbeMsg::Note { text: 42 }),
+            entry(ProbeMsg::Buy { price: wei(30), qty: 3 }),
+            entry(ProbeMsg::Note { text: 7 }),
+        ],
+    )
+    let out = batch(p, value: wei(190), data)
+    assert!(out.len() == 4)
+    assert!(out.get(1).word_at(0) == 42)
+    assert!(balance_of(p, evm.address()) == wei(190))
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn batch_of_notes_with_value_reverts_unspent() uses (evm: mut Evm) {
+    let p = deploy()
+    let data = dyn_array_from(
+        [entry(ProbeMsg::Note { text: 1 }), entry(ProbeMsg::Note { text: 2 })],
+    )
+    assert_reverted_with(
+        try_batch(p, value: wei(9), data),
+        Unspent { left: wei(9) },
+    )
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn nested_batch_reverts() uses (evm: mut Evm) {
+    let p = deploy()
+    let inner = dyn_array_from([entry(ProbeMsg::Deposit { amount: ether(1) })])
+    let data = dyn_array_from(
+        [
+            entry(ProbeMsg::Deposit { amount: ether(1) }),
+            entry(MulticallMsg::Multicall { data: inner }),
+        ],
+    )
+    assert_reverted_with(try_batch(p, value: ether(2), data), NestedBatch {})
+    assert_clean(p)
+}
+
+#[test]
+fn nested_empty_batch_zero_value_still_reverts() uses (evm: mut Evm) {
+    let p = deploy()
+    let data = dyn_array_from(
+        [entry(MulticallMsg::Multicall { data: DynArray::empty() })],
+    )
+    assert_reverted_with(try_batch(p, value: Wei::zero(), data), NestedBatch {})
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn forbidden_handler_in_zero_value_batch_reverts() uses (evm: mut Evm) {
+    let p = deploy()
+    let _: Wei = evm
+        .call(
+            addr: p,
+            gas: 300000,
+            value: ether(1),
+            message: ProbeMsg::Deposit { amount: ether(1) },
+        )
+    let data = dyn_array_from([entry(ProbeMsg::Withdraw {})])
+    assert_reverted_with(
+        try_batch(p, value: Wei::zero(), data),
+        ExternalCallInBatch {},
+    )
+    assert!(evm.balance(p) == ether(1))
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn forbidden_handler_in_paid_batch_reverts() uses (evm: mut Evm) {
+    // `Withdraw` is not payable, so the inherited value already rejects it.
+    let p = deploy()
+    let data = dyn_array_from(
+        [entry(ProbeMsg::Deposit { amount: ether(1) }), entry(ProbeMsg::Withdraw {})],
+    )
+    let out = try_batch(p, value: ether(1), data)
+    assert!(!out.success())
+    assert!(evm.balance(p) == Wei::zero())
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn non_metered_view_in_paid_batch_reverts() uses (evm: mut Evm) {
+    let p = deploy()
+    let data = dyn_array_from(
+        [
+            entry(ProbeMsg::Deposit { amount: ether(1) }),
+            entry(ProbeMsg::BalanceOf { owner: evm.address() }),
+        ],
+    )
+    assert!(!try_batch(p, value: ether(1), data).success())
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn non_metered_view_in_zero_value_batch_ok() uses (evm: mut Evm) {
+    let p = deploy()
+    let _: Wei = evm
+        .call(
+            addr: p,
+            gas: 300000,
+            value: wei(8),
+            message: ProbeMsg::Deposit { amount: wei(8) },
+        )
+    let data = dyn_array_from(
+        [entry(ProbeMsg::BalanceOf { owner: evm.address() }), entry(ProbeMsg::Total {})],
+    )
+    let out = batch(p, value: Wei::zero(), data)
+    assert!(out.get(0).word_at(0) == 8)
+    assert!(out.get(1).word_at(0) == 8)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn withdraw_outside_batch_pays_out() uses (evm: mut Evm) {
+    // The test caller cannot receive ETH, so a wallet contract deposits
+    // through a batch and withdraws in the same frame.
+    let p = deploy()
+    let w = evm.create2<Wallet>(value: Wei::zero(), args: (), salt: 5)
+    let got: Wei = evm
+        .call(
+            addr: w,
+            gas: 3000000,
+            value: wei(6),
+            message: WalletMsg::RoundTrip { probe: p },
+        )
+    assert!(got == wei(6))
+    assert!(evm.balance(w) == wei(6))
+    assert!(evm.balance(p) == Wei::zero())
+    assert!(total(p) == Wei::zero())
+}
+
+// ---------------------------------------------------------------------------
+// Frame boundaries: the till is clean after every top-level frame
+// ---------------------------------------------------------------------------
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn state_is_clean_after_direct_call() uses (evm: mut Evm) {
+    let p = deploy()
+    let _: Wei = evm
+        .call(
+            addr: p,
+            gas: 300000,
+            value: wei(4),
+            message: ProbeMsg::Deposit { amount: wei(4) },
+        )
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn state_is_clean_after_batch() uses (evm: mut Evm) {
+    let p = deploy()
+    let _ = batch(p, value: wei(9), data: deposits(n: 3, each: wei(3)))
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn state_is_clean_after_reverted_batch() uses (evm: mut Evm) {
+    let p = deploy()
+    let _ = try_batch(p, value: wei(9), data: deposits(n: 2, each: wei(3)))
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn cross_frame_second_call_cannot_spend_leftover() uses (evm: mut Evm) {
+    // One transaction, two frames: a batch, then a zero-value direct call
+    // that tries to draw from whatever the batch left behind.
+    let p = deploy()
+    let _ = batch(p, value: ether(1), data: deposits(n: 1, each: ether(1)))
+    assert_reverted_with(
+        try_deposit(p, value: Wei::zero(), amount: ether(1)),
+        Overspend { wanted: ether(1), left: Wei::zero() },
+    )
+    assert!(balance_of(p, evm.address()) == ether(1))
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn cross_frame_batch_after_batch() uses (evm: mut Evm) {
+    let p = deploy()
+    let _ = batch(p, value: wei(5), data: deposits(n: 1, each: wei(5)))
+    assert_reverted_with(
+        try_batch(p, value: Wei::zero(), data: deposits(n: 1, each: wei(5))),
+        Overspend { wanted: wei(5), left: Wei::zero() },
+    )
+    let _ = batch(p, value: wei(7), data: deposits(n: 1, each: wei(7)))
+    assert!(balance_of(p, evm.address()) == wei(12))
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn cross_frame_failed_direct_then_batch() uses (evm: mut Evm) {
+    let p = deploy()
+    let _ = try_deposit(p, value: ether(3), amount: ether(1))
+    let _ = batch(p, value: ether(1), data: deposits(n: 1, each: ether(1)))
+    assert!(balance_of(p, evm.address()) == ether(1))
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn cross_frame_through_relay() uses (evm: mut Evm) {
+    // A relay makes two calls to the probe inside one of its own frames
+    // (like a router, or two UserOperations in one bundle).
+    let p = deploy()
+    let r = evm.create2<TwoCalls>(value: Wei::zero(), args: (), salt: 1)
+    let ok: bool = evm
+        .call(
+            addr: r,
+            gas: 3000000,
+            value: ether(1),
+            message: TwoCallsMsg::Run { probe: p },
+        )
+    assert!(ok)
+    assert!(balance_of(p, r) == ether(1))
+    assert_clean(p)
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn foreign_frame_mid_batch_is_rejected() uses (evm: mut Evm) {
+    // A misconfigured handler (payable, not metered, calls out) lets foreign
+    // code run mid-batch. The foreign code re-enters a metered handler to
+    // spend the payer's budget; `begin` sees a caller that is not the payer.
+    let leaky = evm.create2<LeakyProbe>(value: Wei::zero(), args: (), salt: 2)
+    let thief = evm.create2<Thief>(value: Wei::zero(), args: (), salt: 3)
+    let data = dyn_array_from(
+        [entry(LeakyMsg::Callout { target: thief }), entry(ProbeMsg::Deposit { amount: ether(1) })],
+    )
+    let out = with (Call = evm) {
+        evm.try_call(
+            addr: leaky,
+            gas: 3000000,
+            value: ether(1),
+            message: MulticallMsg::Multicall { data },
+        )
+    }
+    assert_reverted_with(out, ForeignFrame { caller: thief })
+}
+
+// ---------------------------------------------------------------------------
+// Payment (linear Drop guard) on the EVM
+// ---------------------------------------------------------------------------
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn payment_probe_exact_ok() uses (evm: mut Evm) {
+    let d = evm.create2<PaymentProbe>(value: Wei::zero(), args: (), salt: 4)
+    let r: Wei = evm
+        .call(
+            addr: d,
+            gas: 300000,
+            value: wei(12),
+            message: PaymentMsg::Pay { price: wei(4), qty: 3 },
+        )
+    assert!(r == wei(12))
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn payment_probe_unspent_reverts_from_destructor() uses (evm: mut Evm) {
+    let d = evm.create2<PaymentProbe>(value: Wei::zero(), args: (), salt: 4)
+    with (Call = evm) {
+        let out = evm
+            .try_call(
+                addr: d,
+                gas: 300000,
+                value: wei(13),
+                message: PaymentMsg::Pay { price: wei(4), qty: 3 },
+            )
+        assert_reverted_with(out, Unspent { left: wei(1) })
+    }
+}
+
+#[test(balance = 100_000_000_000_000_000_000)]
+fn payment_probe_overspend_reverts() uses (evm: mut Evm) {
+    let d = evm.create2<PaymentProbe>(value: Wei::zero(), args: (), salt: 4)
+    with (Call = evm) {
+        let out = evm
+            .try_call(
+                addr: d,
+                gas: 300000,
+                value: wei(11),
+                message: PaymentMsg::Pay { price: wei(4), qty: 3 },
+            )
+        assert_reverted_with(out, Overspend { wanted: wei(12), left: wei(11) })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Test-only contracts
+// ---------------------------------------------------------------------------
+
+msg TwoCallsMsg {
+    #[selector = sol("run(address)")]
+    Run { probe: Address } -> bool,
+}
+
+/// Calls the probe twice in one frame: first paying, then trying to reuse.
+pub contract TwoCalls uses (ctx: Ctx, call: mut Call) {
+    recv TwoCallsMsg {
+        #[payable]
+        Run { probe } -> bool uses (ctx, mut call) {
+            let first: Wei = call
+                .call(
+                    addr: probe,
+                    gas: 300000,
+                    value: ctx.value(),
+                    message: ProbeMsg::Deposit { amount: ctx.value() },
+                )
+            assert!(first == ctx.value())
+            let second = call
+                .try_call(
+                    addr: probe,
+                    gas: 300000,
+                    value: Wei::zero(),
+                    message: ProbeMsg::Deposit { amount: ctx.value() },
+                )
+            assert!(!second.success())
+            assert!(has_selector<Overspend>(second.returndata()))
+            true
+        }
+    }
+}
+
+msg LeakyMsg {
+    #[selector = sol("callout(address)")]
+    Callout { target: Address },
+}
+
+/// DELIBERATELY WRONG: `Callout` is payable, not metered, and calls foreign
+/// code without `forbid_in_batch`. It exists to show the `ForeignFrame` check.
+pub contract LeakyProbe uses (ctx: Ctx, call: mut Call) {
+    mut balances: std::evm::StorageMap<Address, Wei>,
+    mut register: TransientTill,
+
+    recv {
+        #[payable]
+        LeakyMsg::Callout { target } uses (ctx, mut call) {
+            let out = call
+                .try_call(
+                    addr: target,
+                    gas: ctx.gas(),
+                    value: Wei::zero(),
+                    message: ThiefMsg::Steal { from: ctx.address() },
+                )
+            if !out.success() {
+                std::evm::bubble_last_revert()
+            }
+        }
+
+        #[payable]
+        ProbeMsg::Deposit { amount } -> Wei uses (ctx, mut register, mut balances) {
+            register.begin(ctx.value(), from: ctx.caller())
+            let paid = with (Till = register) {
+                charge(price: amount, qty: 1)
+            }
+            balances[ctx.caller()] += paid
+            register.end()
+            paid
+        }
+
+        #[payable]
+        MulticallMsg::Multicall { data } -> DynArray<Bytes>
+        uses (ctx, mut call, mut register)
+        {
+            let (results, _receipt) = with (TransientTill = register) {
+                ingot::metered_multicall(data)
+            }
+            results
+        }
+    }
+}
+
+msg ThiefMsg {
+    #[selector = sol("steal(address)")]
+    Steal { from: Address },
+}
+
+pub contract Thief uses (call: mut Call) {
+    recv ThiefMsg {
+        Steal { from } uses (mut call) {
+            let _: Wei = call
+                .call(
+                    addr: from,
+                    gas: 300000,
+                    value: Wei::zero(),
+                    message: ProbeMsg::Deposit { amount: ether(1) },
+                )
+        }
+    }
+}
+
+msg PaymentMsg {
+    #[selector = sol("pay(uint256,uint256)")]
+    Pay { price: Wei, qty: u256 } -> Wei,
+}
+
+/// Single-frame handler guarded by the linear `Payment` instead of a
+/// `TransientTill`: its destructor rejects unspent wei.
+pub contract PaymentProbe uses (ctx: Ctx) {
+    recv PaymentMsg {
+        #[payable]
+        Pay { price, qty } -> Wei uses (ctx) {
+            var payment = Payment::new(ctx.value())
+            with (Till = mut payment) {
+                charge(price, qty)
+            }
+        }
+    }
+}
+
+msg WalletMsg {
+    #[selector = sol("roundTrip(address)")]
+    RoundTrip { probe: Address } -> Wei,
+}
+
+/// Deposits through a two-entry batch, then withdraws everything.
+pub contract Wallet uses (ctx: Ctx, call: mut Call) {
+    recv {
+        #[payable]
+        WalletMsg::RoundTrip { probe } -> Wei uses (ctx, mut call) {
+            let half = ctx.value() / 2
+            let data = dyn_array_from(
+                [
+                    entry(ProbeMsg::Deposit { amount: half }),
+                    entry(ProbeMsg::Deposit { amount: ctx.value() - half }),
+                ],
+            )
+            let _: DynArray<Bytes> = call
+                .call(
+                    addr: probe,
+                    gas: 1000000,
+                    value: ctx.value(),
+                    message: MulticallMsg::Multicall { data },
+                )
+            call.call(
+                addr: probe,
+                gas: 1000000,
+                value: Wei::zero(),
+                message: ProbeMsg::Withdraw {},
+            )
+        }
+
+        #[payable]
+        _ {}
+    }
+}
+
+/// `TillProbe` minus Till: the same deposit bookkeeping behind plain std
+/// multicall. Only the gas benchmark uses it, to isolate Till's own cost.
+/// It has the double-count bug on purpose.
+pub contract PlainProbe uses (ctx: Ctx, call: mut Call) {
+    mut balances: std::evm::StorageMap<Address, Wei>,
+    mut total: Wei,
+
+    recv {
+        #[payable]
+        ProbeMsg::Deposit { amount } -> Wei uses (ctx, mut balances, mut total) {
+            assert!(ctx.value() == amount)
+            balances[ctx.caller()] += amount
+            total += amount
+            amount
+        }
+
+        #[payable]
+        MulticallMsg::Multicall { data } -> DynArray<Bytes>
+        uses (ctx, mut call)
+        {
+            std::evm::multicall::multicall(data)
+        }
+    }
+}

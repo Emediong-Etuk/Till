@@ -1,0 +1,157 @@
+// DELIBERATELY VULNERABLE — do not reuse.
+//
+// `NaiveShop` is built the way `std::evm::multicall`'s own doc example
+// suggests: a `#[payable]` multicall handler next to `#[payable]` handlers
+// that trust `ctx.value()`. Every batched entry is DELEGATECALLed with the
+// batch's full `msg.value`, so one payment is counted once per entry.
+//
+// It also offers refunds before the event, as many ticket shops do. Pay
+// 1 ETH once, batch five 1 ETH buys, refund five passes: 5 ETH out, taken
+// from the other buyers. It exists only for the regression tests and the
+// /lab demo page.
+use std::abi::{Bytes, DynArray}
+use std::evm::StorageMap
+use std::evm::multicall::{self, MulticallMsg}
+
+pub msg NaiveMsg {
+    #[selector = sol("addItem(uint256,uint256)")]
+    AddItem { price: Wei, supply: u256 } -> u256,
+    #[selector = sol("buy(uint256,uint256)")]
+    Buy { item: u256, qty: u256 } -> u256,
+    #[selector = sol("tip(uint256)")]
+    Tip { amount: Wei },
+    #[selector = sol("refund(uint256)")]
+    Refund { pass: u256 } -> Wei,
+    #[selector = sol("withdraw(address)")]
+    Withdraw { to: Address } -> Wei,
+    #[selector = sol("passOf(uint256)")]
+    PassOf { pass: u256 } -> NaivePass,
+    #[selector = sol("totalMinted()")]
+    TotalMinted -> u256,
+    #[selector = sol("sellerBalance()")]
+    SellerBalance -> Wei,
+}
+
+pub struct NaiveItem { pub price: Wei, pub supply: u256, pub sold: u256 }
+
+impl Copy for NaiveItem {}
+
+#[abi]
+pub struct NaivePass { pub owner: Address, pub item: u256, pub paid: Wei }
+
+impl Copy for NaivePass {}
+
+#[event]
+pub struct NaivePurchased {
+    #[indexed]
+    pub buyer: Address,
+    pub item: u256,
+    pub qty: u256,
+    pub first_pass: u256,
+    pub paid: Wei,
+}
+
+#[event]
+pub struct NaiveRefunded {
+    #[indexed]
+    pub to: Address,
+    pub pass: u256,
+    pub amount: Wei,
+}
+
+pub contract NaiveShop uses (ctx: Ctx, call: mut Call, log: mut Log) {
+    owner: Address,
+    mut items: StorageMap<u256, NaiveItem>,
+    mut item_count: u256,
+    mut passes: StorageMap<u256, NaivePass>,
+    mut minted: u256,
+    mut seller_balance: Wei,
+
+    init(seller: Address) uses (mut owner) { owner = seller }
+
+    recv NaiveMsg {
+        AddItem { price, supply } -> u256 uses (ctx, owner, mut items, mut item_count) {
+            assert!(ctx.caller() == owner, "not owner")
+            let id = item_count
+            items[id] = NaiveItem { price, supply, sold: 0 }
+            item_count = id + 1
+            id
+        }
+
+        // BUG: trusts ctx.value(), which every batched entry sees in full.
+        #[payable]
+        Buy { item, qty } -> u256 uses (ctx, mut items, mut passes, mut minted, mut log) {
+            let it = items[item]
+            assert!(qty > 0 && it.sold + qty <= it.supply, "sold out")
+            assert!(ctx.value() == it.price * qty, "wrong amount")
+            items[item].sold = it.sold + qty
+            let first = minted + 1
+            var id = first
+            while id < first + qty {
+                passes[id] = NaivePass { owner: ctx.caller(), item, paid: it.price }
+                id += 1
+            }
+            minted += qty
+            log.emit(
+                NaivePurchased {
+                    buyer: ctx.caller(),
+                    item,
+                    qty,
+                    first_pass: first,
+                    paid: ctx.value(),
+                },
+            )
+            first
+        }
+
+        // BUG: same pattern.
+        #[payable]
+        Tip { amount } uses (ctx, mut seller_balance) {
+            assert!(ctx.value() == amount, "wrong amount")
+            seller_balance += amount
+        }
+
+        Refund { pass } -> Wei uses (ctx, mut call, mut passes, mut log) {
+            let p = passes[pass]
+            assert!(p.owner == ctx.caller(), "not holder")
+            passes[pass] = NaivePass { owner: Address::zero(), item: p.item, paid: Wei::zero() }
+            assert!(
+                call.send_value(addr: ctx.caller(), gas: ctx.gas(), value: p.paid).success(),
+                "send",
+            )
+            log.emit(NaiveRefunded { to: ctx.caller(), pass, amount: p.paid })
+            p.paid
+        }
+
+        Withdraw { to } -> Wei uses (ctx, mut call, owner, mut seller_balance) {
+            assert!(ctx.caller() == owner, "not owner")
+            let amount = seller_balance
+            seller_balance = Wei::zero()
+            assert!(
+                call.send_value(addr: to, gas: ctx.gas(), value: amount).success(),
+                "send",
+            )
+            amount
+        }
+
+        PassOf { pass } -> NaivePass uses (passes) {
+            passes[pass]
+        }
+
+        TotalMinted -> u256 uses (minted) {
+            minted
+        }
+
+        SellerBalance -> Wei uses (seller_balance) {
+            seller_balance
+        }
+    }
+
+    // Exactly as in std::evm::multicall's doc example.
+    recv MulticallMsg {
+        #[payable]
+        Multicall { data } -> DynArray<Bytes> uses (ctx, mut call) {
+            multicall::multicall(data)
+        }
+    }
+}

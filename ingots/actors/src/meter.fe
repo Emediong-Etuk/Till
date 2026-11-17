@@ -1,0 +1,24 @@
+//! `GasMeter`: emits a `Measured` log so `fe test --show-logs` output carries
+//! numbers (seeds, case counts, gas) into scripts/report.ts.
+
+pub msg MeterMsg {
+    #[selector = sol("record(uint256,uint256,uint256,uint256)")]
+    Record { tag: u256, a: u256, b: u256, c: u256 },
+}
+
+#[event]
+pub struct Measured {
+    #[indexed]
+    pub tag: u256,
+    pub a: u256,
+    pub b: u256,
+    pub c: u256,
+}
+
+pub contract GasMeter uses (log: mut Log) {
+    recv MeterMsg {
+        Record { tag, a, b, c } uses (mut log) {
+            log.emit(Measured { tag, a, b, c })
+        }
+    }
+}

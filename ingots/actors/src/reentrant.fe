@@ -1,0 +1,109 @@
+//! `ReentrantReceiver`: an attacker that re-enters its target when it gets
+//! control: on receiving ETH and on `onERC721Received`. The attack calldata
+//! and value are armed in advance; the receiver records whether the
+//! re-entry was attempted, whether it succeeded, and the revert selector.
+use std::abi::{Bytes, Bytes4}
+use std::evm::{StorageBytes, StorageMap}
+use std::evm::returndata::ReturnData
+use super::actor::Erc721ReceiverMsg
+
+#[abi]
+pub struct Report { pub attempts: u256, pub successes: u256, pub last_selector: u256 }
+
+impl Copy for Report {}
+
+pub msg ReentrantMsg {
+    #[selector = sol("arm(address,uint256,bytes)")]
+    Arm { target: Address, value: Wei, data: Bytes },
+    #[selector = sol("exec(address,uint256,bytes)")]
+    Exec { target: Address, value: Wei, data: Bytes } -> Bytes,
+    #[selector = sol("report()")]
+    GetReport -> Report,
+}
+
+const ERC721_RECEIVED: u256 = 0x150b7a02
+
+pub contract ReentrantReceiver uses (ctx: Ctx, call: mut Call) {
+    mut target: Address,
+    mut attack_value: Wei,
+    mut attack: StorageBytes<u256>,
+    mut entered: bool,
+    mut report: Report,
+
+    #[payable]
+    init()
+    {}
+
+    recv {
+        ReentrantMsg::Arm { target: t, value, data }
+        uses (mut target, mut attack_value, mut attack)
+        {
+            target = t
+            attack_value = value
+            attack.store_view(key: 0, view: data.span())
+        }
+
+        #[payable]
+        ReentrantMsg::Exec { target: t, value, data } -> Bytes
+        uses (ctx, mut call)
+        {
+            let out = call.try_call_raw(addr: t, gas: ctx.gas(), value, args: data.span())
+            if !out.success() {
+                std::evm::bubble_last_revert()
+            }
+            ReturnData::new().to_bytes()
+        }
+
+        ReentrantMsg::GetReport -> Report uses (report) {
+            report
+        }
+
+        Erc721ReceiverMsg::OnErc721Received { operator, from, tokenId, data } -> Bytes4
+        uses (ctx, mut call, target, attack_value, attack, mut entered, mut report)
+        {
+            strike()
+            Bytes4 { val: ERC721_RECEIVED }
+        }
+
+        #[payable]
+        _ uses (ctx, mut call, target, attack_value, attack, mut entered, mut report) {
+            strike()
+        }
+    }
+}
+
+/// Re-enter once: fire the armed call and record what happened.
+fn strike()
+uses (
+    ctx: Ctx,
+    call: mut Call,
+    target: Address,
+    attack_value: Wei,
+    attack: StorageBytes<u256>,
+    entered: mut bool,
+    report: mut Report,
+)
+{
+    if entered || target == Address::zero() {
+        return
+    }
+    entered = true
+    let data = attack.to_memory(key: 0)
+    let out = call
+        .try_call_raw(
+            addr: target,
+            gas: ctx.gas(),
+            value: attack_value,
+            args: data.span(),
+        )
+    report.attempts += 1
+    if out.success() {
+        report.successes += 1
+        report.last_selector = 0
+    } else if out.returndata_len() >= 4 {
+        report.last_selector = out.returndata().word_at(0) >> 224
+    } else {
+        report.last_selector = 0xffffffff
+    }
+    entered = false
+}

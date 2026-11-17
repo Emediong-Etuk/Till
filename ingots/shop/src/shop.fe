@@ -1,0 +1,656 @@
+//! `Shop`: one contract per seller. It sells items whose passes are ERC-721
+//! tokens of this contract, holds buyer money in escrow per item, and handles
+//! check-in, refunds and withdrawals.
+//!
+//! Handler classes (see docs/ARCHITECTURE.md for the full table):
+//!
+//! - metered (`Buy`, `BuyFor`, `Tip`, `Note`): `#[payable]`, bracketed by
+//!   `register.begin(ctx.value(), ...)` / `register.end()`. None lists
+//!   `mut call`, so none can run foreign code (I4, compiler-checked).
+//! - batch (`Multicall`): the only other payable handler; runs std's
+//!   multicall inside a Till budget.
+//! - everything else is not payable. Handlers that send ETH or call a
+//!   receiver start with `register.forbid_in_batch()` and take the payout
+//!   lock.
+use std::abi::{Bytes, Bytes32, Bytes4, DynArray, DynString}
+use std::evm::Mutex
+use std::evm::erc721::check_on_received
+use std::evm::multicall::MulticallMsg
+use std::evm::signature
+use std::evm::token::ReceiverCheck
+use till::{Till, TillState, TransientTill, metered_multicall}
+use super::checkin::checkin_digest
+use super::errors::{
+    AlreadyRedeemed,
+    BadSignature,
+    CannotShortenRelease,
+    InvalidItem,
+    InvalidOwner,
+    InvalidRecipient,
+    ItemNotActive,
+    NotOwner,
+    NotPendingOwner,
+    NotRefundable,
+    NothingToWithdraw,
+    PayoutFailed,
+    PayoutLocked,
+    SignatureExpired,
+    SupplyBelowSold,
+    TooEarly,
+    UnknownItem,
+    UnsafeRecipient,
+}
+use super::events::{
+    BatchSettled,
+    ItemAdded,
+    ItemCancelled,
+    ItemReleased,
+    ItemUpdated,
+    OwnershipTransferStarted,
+    OwnershipTransferred,
+    Redeemed,
+    Refunded,
+    Swept,
+    Withdrawn,
+}
+use super::msgs::{Erc721Msg, RefundMsg, SaleMsg, SellerMsg, ViewMsg}
+use super::passes
+use super::rules::{
+    E_FINAL,
+    E_SHORTEN,
+    OK,
+    can_pause,
+    can_refund,
+    can_resume,
+    check_extend,
+    check_new,
+    check_release,
+    check_update,
+    is_final,
+}
+use super::sales::{note, purchase, tip}
+use super::state::{
+    ACTIVE,
+    AccountingView,
+    Books,
+    CANCELLED,
+    Catalog,
+    Item,
+    ItemView,
+    PAUSED,
+    PassView,
+    Passes,
+    RELEASED,
+    Ownership,
+    view_of,
+}
+use super::uri::{label_string, token_uri}
+
+pub contract Shop uses (ctx: Ctx, call: mut Call, log: mut Log) {
+    mut ownership: Ownership,
+    name: u256,
+    symbol: u256,
+    uri0: u256,
+    uri1: u256,
+    uri_len: u256,
+    mut catalog: Catalog,
+    mut passes: Passes,
+    mut books: Books,
+    mut register: TransientTill,
+    mut payout: Mutex<bool>,
+
+    init(
+        owner: Address,
+        shop_name: u256,
+        shop_symbol: u256,
+        base0: u256,
+        base1: u256,
+        base_len: u256,
+    )
+    uses (mut ownership, mut name, mut symbol, mut uri0, mut uri1, mut uri_len, mut log)
+    {
+        if owner == Address::zero() {
+            revert_error(InvalidOwner {})
+        }
+        ownership.owner = owner
+        name = shop_name
+        symbol = shop_symbol
+        uri0 = base0
+        uri1 = base1
+        uri_len = base_len
+        log.emit(OwnershipTransferred { previous: Address::zero(), owner })
+    }
+
+    // -----------------------------------------------------------------------
+    // Metered: the only handlers that accept value directly
+    // -----------------------------------------------------------------------
+    recv SaleMsg {
+        #[payable]
+        Buy { item, qty } -> u256 uses (
+            ctx,
+            mut register,
+            mut catalog,
+            mut passes,
+            mut books,
+            mut log,
+        ) {
+            register.begin(ctx.value(), from: ctx.caller())
+            let first = with (Till = register) {
+                purchase(item, qty, to: ctx.caller(), buyer: ctx.caller())
+            }
+            register.end()
+            first
+        }
+
+        #[payable]
+        BuyFor { item, qty, to } -> u256 uses (
+            ctx,
+            mut register,
+            mut catalog,
+            mut passes,
+            mut books,
+            mut log,
+        ) {
+            register.begin(ctx.value(), from: ctx.caller())
+            let first = with (Till = register) {
+                purchase(item, qty, to, buyer: ctx.caller())
+            }
+            register.end()
+            first
+        }
+
+        #[payable]
+        Tip { amount } uses (ctx, mut register, mut books, mut log) {
+            register.begin(ctx.value(), from: ctx.caller())
+            with (Till = register) {
+                tip(amount, from: ctx.caller())
+            }
+            register.end()
+        }
+
+        #[payable]
+        Note { text } uses (ctx, mut register, mut log) {
+            register.begin(ctx.value(), from: ctx.caller())
+            note(text: text.val, from: ctx.caller())
+            register.end()
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch: std multicall inside one Till budget
+    // -----------------------------------------------------------------------
+    recv MulticallMsg {
+        #[payable]
+        Multicall { data } -> DynArray<Bytes> uses (ctx, mut call, mut register, mut log) {
+            let (results, receipt) = with (TransientTill = register) {
+                metered_multicall(data)
+            }
+            log.emit(
+                BatchSettled { payer: receipt.payer, paid: receipt.paid, entries: receipt.entries },
+            )
+            results
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Seller (owner only)
+    // -----------------------------------------------------------------------
+    recv SellerMsg {
+        AddItem { price, supply, maxPerWallet, releaseAt, kind, label } -> u256
+        uses (ctx, ownership, mut catalog, mut log)
+        {
+            only_owner(ctx.caller())
+            if check_new(supply, kind) != OK {
+                revert_error(InvalidItem {})
+            }
+            let id = catalog.count
+            catalog.items[id] = Item {
+                price,
+                supply,
+                sold: 0,
+                max_per_wallet: maxPerWallet,
+                release_at: releaseAt,
+                escrow: Wei::zero(),
+                status: ACTIVE,
+                kind,
+                label: label.val,
+            }
+            catalog.count = id + 1
+            log.emit(
+                ItemAdded {
+                    item: id,
+                    price,
+                    supply,
+                    max_per_wallet: maxPerWallet,
+                    release_at: releaseAt,
+                    kind,
+                    label: label.val,
+                },
+            )
+            id
+        }
+
+        UpdateItem { item, price, supply, maxPerWallet }
+        uses (ctx, ownership, mut catalog, mut log)
+        {
+            only_owner(ctx.caller())
+            let it = item_at(item)
+            let verdict = check_update(it, supply)
+            if verdict == E_FINAL {
+                revert_error(ItemNotActive { item, status: it.status })
+            } else if verdict != OK {
+                revert_error(SupplyBelowSold { item, sold: it.sold })
+            }
+            catalog.items[item].price = price
+            catalog.items[item].supply = supply
+            catalog.items[item].max_per_wallet = maxPerWallet
+            emit_updated(item)
+        }
+
+        Pause { item } uses (ctx, ownership, mut catalog, mut log) {
+            only_owner(ctx.caller())
+            let it = item_at(item)
+            if !can_pause(it.status) {
+                revert_error(ItemNotActive { item, status: it.status })
+            }
+            catalog.items[item].status = PAUSED
+            emit_updated(item)
+        }
+
+        Resume { item } uses (ctx, ownership, mut catalog, mut log) {
+            only_owner(ctx.caller())
+            let it = item_at(item)
+            if !can_resume(it.status) {
+                revert_error(ItemNotActive { item, status: it.status })
+            }
+            catalog.items[item].status = ACTIVE
+            emit_updated(item)
+        }
+
+        Cancel { item } uses (ctx, ownership, mut catalog, mut log) {
+            only_owner(ctx.caller())
+            let it = item_at(item)
+            if is_final(it.status) {
+                revert_error(ItemNotActive { item, status: it.status })
+            }
+            catalog.items[item].status = CANCELLED
+            log.emit(ItemCancelled { item, escrow: it.escrow })
+        }
+
+        ExtendRelease { item, releaseAt } uses (ctx, ownership, mut catalog, mut log) {
+            only_owner(ctx.caller())
+            let it = item_at(item)
+            let verdict = check_extend(it, release_at: releaseAt)
+            if verdict == E_SHORTEN {
+                revert_error(CannotShortenRelease { item, release_at: it.release_at })
+            } else if verdict != OK {
+                revert_error(ItemNotActive { item, status: it.status })
+            }
+            catalog.items[item].release_at = releaseAt
+            emit_updated(item)
+        }
+
+        Release { item } -> Wei uses (ctx, ownership, mut catalog, mut books, mut log) {
+            only_owner(ctx.caller())
+            let it = item_at(item)
+            let verdict = check_release(it, now: ctx.timestamp())
+            if verdict == E_FINAL {
+                revert_error(ItemNotActive { item, status: it.status })
+            } else if verdict != OK {
+                revert_error(TooEarly { item, release_at: it.release_at })
+            }
+            let amount = it.escrow
+            catalog.items[item].status = RELEASED
+            catalog.items[item].escrow = Wei::zero()
+            books.total_escrow -= amount
+            books.seller_available += amount
+            log.emit(ItemReleased { item, amount })
+            amount
+        }
+
+        // Read-only foreign code at most (an ERC-1271 STATICCALL, which can
+        // write neither storage nor transient storage), so this is allowed in
+        // zero-value batches: the door can redeem a queue in one transaction.
+        Redeem { pass, deadline, sig } -> Wei uses (
+            ctx,
+            call,
+            ownership,
+            mut catalog,
+            mut passes,
+            mut books,
+            mut log,
+        ) {
+            only_owner(ctx.caller())
+            let p = passes::existing(pass)
+            if p.redeemed {
+                revert_error(AlreadyRedeemed { pass })
+            }
+            if ctx.timestamp() > deadline {
+                revert_error(SignatureExpired { deadline })
+            }
+            let it = catalog.items[p.item]
+            if it.status == CANCELLED {
+                revert_error(ItemNotActive { item: p.item, status: it.status })
+            }
+            let digest = checkin_digest(
+                chain_id: ctx.chainid(),
+                shop: ctx.address(),
+                pass,
+                deadline,
+            )
+            if !signature::is_valid_signature_now(p.owner, digest, signature: sig.span()) {
+                revert_error(BadSignature { holder: p.owner })
+            }
+            passes.passes[pass].redeemed = true
+            var released = Wei::zero()
+            if it.status != RELEASED {
+                released = p.paid
+                catalog.items[p.item].escrow = it.escrow - released
+                books.total_escrow -= released
+                books.seller_available += released
+            }
+            log.emit(Redeemed { pass, holder: p.owner, released })
+            released
+        }
+
+        Withdraw { to } -> Wei uses (
+            ctx,
+            mut call,
+            ownership,
+            mut books,
+            register,
+            mut payout,
+            mut log,
+        ) {
+            register.forbid_in_batch()
+            only_owner(ctx.caller())
+            if to == Address::zero() {
+                revert_error(InvalidRecipient {})
+            }
+            take_lock()
+            let amount = books.seller_available
+            if amount == Wei::zero() {
+                revert_error(NothingToWithdraw {})
+            }
+            books.seller_available = Wei::zero()
+            pay(to, amount)
+            payout.unlock()
+            log.emit(Withdrawn { to, amount })
+            amount
+        }
+
+        Sweep { to } -> Wei uses (ctx, mut call, ownership, books, register, mut payout, mut log) {
+            register.forbid_in_batch()
+            only_owner(ctx.caller())
+            if to == Address::zero() {
+                revert_error(InvalidRecipient {})
+            }
+            take_lock()
+            let accounted = books.total_escrow + books.seller_available
+            let amount = ctx.selfbalance() - accounted
+            if amount == Wei::zero() {
+                revert_error(NothingToWithdraw {})
+            }
+            pay(to, amount)
+            payout.unlock()
+            log.emit(Swept { to, amount })
+            amount
+        }
+
+        TransferOwnership { to } uses (ctx, mut ownership, mut log) {
+            only_owner_mut(ctx.caller())
+            ownership.pending = to
+            log.emit(
+                OwnershipTransferStarted { owner: ownership.owner, pending: to },
+            )
+        }
+
+        AcceptOwnership uses (ctx, mut ownership, mut log) {
+            let caller = ctx.caller()
+            if caller != ownership.pending || caller == Address::zero() {
+                revert_error(NotPendingOwner { caller })
+            }
+            let previous = ownership.owner
+            ownership.owner = caller
+            ownership.pending = Address::zero()
+            log.emit(OwnershipTransferred { previous, owner: caller })
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Buyer payout
+    // -----------------------------------------------------------------------
+    recv RefundMsg {
+        Refund { pass } -> Wei uses (
+            ctx,
+            mut call,
+            mut catalog,
+            mut passes,
+            mut books,
+            register,
+            mut payout,
+            mut log,
+        ) {
+            register.forbid_in_batch()
+            take_lock()
+            let p = passes::existing(pass)
+            let it = catalog.items[p.item]
+            if !can_refund(status: it.status, redeemed: p.redeemed) {
+                revert_error(NotRefundable { pass })
+            }
+            let caller = ctx.caller()
+            if !passes::is_authorized(spender: caller, holder: p.owner, id: pass) {
+                revert_error(super::errors::NotAuthorized { caller, pass })
+            }
+            // Effects first, then the transfer.
+            passes::burn(pass)
+            catalog.items[p.item].escrow = it.escrow - p.paid
+            books.total_escrow -= p.paid
+            pay(to: p.owner, amount: p.paid)
+            payout.unlock()
+            log.emit(Refunded { pass, to: p.owner, amount: p.paid })
+            p.paid
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // ERC-721
+    // -----------------------------------------------------------------------
+    recv Erc721Msg {
+        BalanceOf { owner } -> u256 uses (passes) {
+            if owner == Address::zero() {
+                revert_error(InvalidOwner {})
+            }
+            passes.balance_of[owner]
+        }
+
+        OwnerOf { tokenId } -> Address uses (passes) {
+            passes::existing(tokenId).owner
+        }
+
+        Approve { to, tokenId } uses (ctx, mut passes, mut log) {
+            passes::approve(caller: ctx.caller(), to, id: tokenId)
+        }
+
+        GetApproved { tokenId } -> Address uses (passes) {
+            let _ = passes::existing(tokenId)
+            passes.approved[tokenId]
+        }
+
+        SetApprovalForAll { operator, approved } uses (ctx, mut passes, mut log) {
+            passes::set_operator(caller: ctx.caller(), operator, approved)
+        }
+
+        IsApprovedForAll { owner, operator } -> bool
+        uses (passes)
+        {
+            passes.operator[(owner, operator)]
+        }
+
+        TransferFrom { from, to, tokenId } uses (ctx, mut passes, mut log) {
+            passes::transfer(caller: ctx.caller(), from, to, id: tokenId)
+        }
+
+        SafeTransferFrom { from, to, tokenId } uses (ctx, mut call, mut passes, register, mut log) {
+            register.forbid_in_batch()
+            passes::transfer(caller: ctx.caller(), from, to, id: tokenId)
+            require_receiver(from, to, id: tokenId, data: Bytes::empty())
+        }
+
+        SafeTransferFromData { from, to, tokenId, data }
+        uses (ctx, mut call, mut passes, register, mut log)
+        {
+            register.forbid_in_batch()
+            passes::transfer(caller: ctx.caller(), from, to, id: tokenId)
+            require_receiver(from, to, id: tokenId, data)
+        }
+
+        SupportsInterface { interfaceId } -> bool {
+            passes::supports(interfaceId.val)
+        }
+
+        Name -> DynString uses (name) {
+            label_string(name)
+        }
+
+        Symbol -> DynString uses (symbol) {
+            label_string(symbol)
+        }
+
+        TokenUri { tokenId } -> DynString uses (ctx, passes, uri0, uri1, uri_len) {
+            let _ = passes::existing(tokenId)
+            token_uri(
+                base0: uri0,
+                base1: uri1,
+                base_len: uri_len,
+                shop: ctx.address(),
+                id: tokenId,
+            )
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Views
+    // -----------------------------------------------------------------------
+    recv ViewMsg {
+        ItemOf { item } -> ItemView uses (catalog) {
+            view_of(item_at(item))
+        }
+
+        ItemCount -> u256 uses (catalog) {
+            catalog.count
+        }
+
+        PassOf { pass } -> PassView uses (passes) {
+            let p = passes.passes[pass]
+            PassView { item: p.item, paid: p.paid, redeemed: p.redeemed, owner: p.owner }
+        }
+
+        Accounting -> AccountingView uses (ctx, books) {
+            AccountingView {
+                total_escrow: books.total_escrow,
+                seller_available: books.seller_available,
+                tips_total: books.tips_total,
+                balance: ctx.selfbalance(),
+            }
+        }
+
+        State -> TillState uses (register) {
+            register.state()
+        }
+
+        CheckInDigest { pass, deadline } -> Bytes32
+        uses (ctx)
+        {
+            Bytes32 {
+                val: checkin_digest(
+                    chain_id: ctx.chainid(),
+                    shop: ctx.address(),
+                    pass,
+                    deadline,
+                ),
+            }
+        }
+
+        Owner -> Address uses (ownership) {
+            ownership.owner
+        }
+
+        PendingOwner -> Address uses (ownership) {
+            ownership.pending
+        }
+
+        BoughtBy { item, who } -> u256 uses (catalog) {
+            catalog.bought[(item, who)]
+        }
+
+        TotalMinted -> u256 uses (passes) {
+            passes.minted
+        }
+    }
+}
+
+fn only_owner(_ caller: Address) uses (ownership: Ownership) {
+    if caller != ownership.owner {
+        revert_error(NotOwner { caller })
+    }
+}
+
+fn only_owner_mut(_ caller: Address) uses (ownership: mut Ownership) {
+    if caller != ownership.owner {
+        revert_error(NotOwner { caller })
+    }
+}
+
+fn item_at(_ item: u256) -> Item uses (catalog: Catalog) {
+    if item >= catalog.count {
+        revert_error(UnknownItem { item })
+    }
+    catalog.items[item]
+}
+
+fn emit_updated(_ item: u256) uses (catalog: Catalog, log: mut Log) {
+    let it = catalog.items[item]
+    log.emit(
+        ItemUpdated {
+            item,
+            price: it.price,
+            supply: it.supply,
+            max_per_wallet: it.max_per_wallet,
+            release_at: it.release_at,
+            status: it.status,
+        },
+    )
+}
+
+fn take_lock() uses (payout: mut Mutex<bool>) {
+    if !payout.try_lock() {
+        revert_error(PayoutLocked {})
+    }
+}
+
+/// Send `amount` to `to` with all remaining gas (smart-contract wallets need
+/// more than the 2300 stipend). Callers have already updated their books
+/// and hold the payout lock.
+fn pay(to: Address, amount: Wei) uses (ctx: Ctx, call: mut Call) {
+    if !call.send_value(addr: to, gas: ctx.gas(), value: amount).success() {
+        revert_error(PayoutFailed { to, amount })
+    }
+}
+
+fn require_receiver(from: Address, to: Address, id: u256, data: own Bytes)
+uses (ctx: Ctx, call: mut Call)
+{
+    let check = check_on_received(
+        receiver: to,
+        operator: ctx.caller(),
+        from,
+        token_id: id,
+        data,
+    )
+    match check {
+        ReceiverCheck::Accepted => {},
+        ReceiverCheck::NoCode => {},
+        _ => revert_error(UnsafeRecipient { to }),
+    }
+}

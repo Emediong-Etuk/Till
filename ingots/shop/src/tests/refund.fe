@@ -1,0 +1,327 @@
+// Cancellation and refunds (I7, I10).
+use std::abi::Bytes
+use std::evm::{Evm, ether, wei}
+use actors::{ReentrantMsg, ReentrantReceiver, RejectingReceiver, Report}
+use ingot::{Erc721Msg, RefundMsg, SaleMsg, SellerMsg}
+use ingot::errors::{NotAuthorized, NotRefundable, PayoutFailed, UnknownPass}
+use ingot::testkit::{
+    GAS,
+    actor,
+    assert_books_exact,
+    assert_reverted_with,
+    balance_of,
+    books,
+    buy,
+    deploy_shop,
+    exec,
+    item_of,
+    ticket,
+    try_exec,
+    try_seller,
+}
+use till::entry
+
+fn refund(_ who: Address, _ shop: Address, _ pass: u256) -> Wei
+uses (evm: mut Evm)
+{
+    wei(
+        exec(
+            who,
+            target: shop,
+            value: Wei::zero(),
+            data: entry(RefundMsg::Refund { pass }),
+        )
+            .word_at(0),
+    )
+}
+
+fn try_refund(_ who: Address, _ shop: Address, _ pass: u256) -> std::evm::CallOutcome
+uses (evm: mut Evm)
+{
+    try_exec(
+        who,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(RefundMsg::Refund { pass }),
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn cancel_then_refund_pays_100_percent() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = ticket(shop, price: ether(1), supply: 10)
+    let pass = buy(alice, shop, item, qty: 1, value: ether(1))
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    let before = evm.balance(alice)
+    assert!(refund(alice, shop, pass) == ether(1))
+    assert!(evm.balance(alice) == before + ether(1))
+    assert!(balance_of(shop, alice) == 0)
+    assert!(item_of(shop, item).escrow == Wei::zero())
+    assert_books_exact(shop)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn refund_all_holders_empties_escrow() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let bob = actor(2)
+    let tobi = actor(4)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let other = ticket(shop, price: wei(7), supply: 10)
+    let a = buy(alice, shop, item, qty: 2, value: wei(200))
+    let b = buy(bob, shop, item, qty: 1, value: wei(100))
+    let t = buy(tobi, shop, item: other, qty: 1, value: wei(7))
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    let _ = refund(alice, shop, a)
+    let _ = refund(alice, shop, a + 1)
+    let _ = refund(bob, shop, b)
+    assert!(item_of(shop, item).escrow == Wei::zero())
+    // The other item's escrow is untouched.
+    assert!(item_of(shop, other).escrow == wei(7))
+    assert!(books(shop).total_escrow == wei(7))
+    assert_reverted_with(try_refund(tobi, shop, t), NotRefundable { pass: t })
+    assert_books_exact(shop)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn refund_pays_what_was_paid_after_price_change() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let pass = buy(alice, shop, item, qty: 1, value: wei(100))
+    let _ = try_seller(
+        shop,
+        SellerMsg::UpdateItem { item, price: wei(1), supply: 10, maxPerWallet: 0 },
+    )
+    let cheap = buy(alice, shop, item, qty: 1, value: wei(1))
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    assert!(refund(alice, shop, pass) == wei(100))
+    assert!(refund(alice, shop, cheap) == wei(1))
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn refund_of_active_item_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let pass = buy(alice, shop, item, qty: 1, value: wei(100))
+    assert_reverted_with(try_refund(alice, shop, pass), NotRefundable { pass })
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn refund_of_released_item_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = ingot::testkit::add_item(
+        shop,
+        price: wei(100),
+        supply: 10,
+        cap: 0,
+        release_at: Timestamp::from_seconds(0),
+    )
+    let pass = buy(alice, shop, item, qty: 1, value: wei(100))
+    let _ = try_seller(shop, SellerMsg::Release { item })
+    assert_reverted_with(try_refund(alice, shop, pass), NotRefundable { pass })
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn double_refund_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let pass = buy(alice, shop, item, qty: 1, value: wei(100))
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    let _ = refund(alice, shop, pass)
+    assert_reverted_with(try_refund(alice, shop, pass), UnknownPass { pass })
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn refund_by_stranger_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let mallory = actor(3)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let pass = buy(alice, shop, item, qty: 1, value: wei(100))
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    assert_reverted_with(
+        try_refund(mallory, shop, pass),
+        NotAuthorized { caller: mallory, pass },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn refund_by_approved_pays_the_holder() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let bob = actor(2)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let pass = buy(alice, shop, item, qty: 1, value: wei(100))
+    let _ = exec(
+        alice,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(Erc721Msg::Approve { to: bob, tokenId: pass }),
+    )
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    let alice_before = evm.balance(alice)
+    let bob_before = evm.balance(bob)
+    let _ = refund(bob, shop, pass)
+    assert!(evm.balance(alice) == alice_before + wei(100))
+    assert!(evm.balance(bob) == bob_before)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn refund_by_operator_ok() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let bob = actor(2)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let pass = buy(alice, shop, item, qty: 1, value: wei(100))
+    let _ = exec(
+        alice,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(
+            Erc721Msg::SetApprovalForAll { operator: bob, approved: true },
+        ),
+    )
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    assert!(refund(bob, shop, pass) == wei(100))
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn refund_to_rejecting_holder_reverts_and_keeps_books() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let rej = evm.create2<RejectingReceiver>(value: ether(10), args: (), salt: 55)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let pass = buy(rej, shop, item, qty: 1, value: wei(100))
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    assert_reverted_with(
+        try_refund(rej, shop, pass),
+        PayoutFailed { to: rej, amount: wei(100) },
+    )
+    assert!(balance_of(shop, rej) == 1)
+    assert!(item_of(shop, item).escrow == wei(100))
+    assert_books_exact(shop)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn reentrant_refund_receiver_cannot_double_refund() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let thief = evm.create2<ReentrantReceiver>(value: ether(10), args: (), salt: 66)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let first: Bytes = evm
+        .call(
+            addr: thief,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ReentrantMsg::Exec {
+                target: shop,
+                value: wei(200),
+                data: entry(SaleMsg::Buy { item, qty: 2 }),
+            },
+        )
+    let pass = first.word_at(0)
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    // On receiving the first refund, re-enter Refund for the second pass.
+    evm.call(
+        addr: thief,
+        gas: GAS,
+        value: Wei::zero(),
+        message: ReentrantMsg::Arm {
+            target: shop,
+            value: Wei::zero(),
+            data: entry(RefundMsg::Refund { pass: pass + 1 }),
+        },
+    )
+    let _: Bytes = evm
+        .call(
+            addr: thief,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ReentrantMsg::Exec {
+                target: shop,
+                value: Wei::zero(),
+                data: entry(RefundMsg::Refund { pass }),
+            },
+        )
+    let r: Report = evm
+        .call(
+            addr: thief,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ReentrantMsg::GetReport {},
+        )
+    assert!(r.attempts == 1 && r.successes == 0)
+    // PayoutLocked()
+    assert!(r.last_selector == 0x6a7e4b19)
+    assert!(item_of(shop, item).escrow == wei(100))
+    assert_books_exact(shop)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn reentrant_refund_receiver_cannot_buy_with_batch_budget()
+uses (evm: mut Evm)
+{
+    // Re-entering a metered handler from a refund (outside any batch) is an
+    // ordinary new purchase that must pay its own way.
+    let shop = deploy_shop(0)
+    let thief = evm.create2<ReentrantReceiver>(value: ether(10), args: (), salt: 66)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let first: Bytes = evm
+        .call(
+            addr: thief,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ReentrantMsg::Exec {
+                target: shop,
+                value: wei(100),
+                data: entry(SaleMsg::Buy { item, qty: 1 }),
+            },
+        )
+    let other = ticket(shop, price: wei(50), supply: 10)
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    evm.call(
+        addr: thief,
+        gas: GAS,
+        value: Wei::zero(),
+        message: ReentrantMsg::Arm {
+            target: shop,
+            value: Wei::zero(),
+            data: entry(SaleMsg::Buy { item: other, qty: 1 }),
+        },
+    )
+    let _: Bytes = evm
+        .call(
+            addr: thief,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ReentrantMsg::Exec {
+                target: shop,
+                value: Wei::zero(),
+                data: entry(RefundMsg::Refund { pass: first.word_at(0) }),
+            },
+        )
+    let r: Report = evm
+        .call(
+            addr: thief,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ReentrantMsg::GetReport {},
+        )
+    assert!(r.attempts == 1 && r.successes == 0)
+    assert!(r.last_selector == 0x9539bfce) // Overspend
+    assert_books_exact(shop)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn refund_after_redeem_reverts() uses (evm: mut Evm) {
+    // Covered with real signatures in checkin.fe; here the rule itself.
+    assert!(
+        !ingot::rules::can_refund(status: ingot::CANCELLED, redeemed: true),
+    )
+    assert!(
+        ingot::rules::can_refund(status: ingot::CANCELLED, redeemed: false),
+    )
+}

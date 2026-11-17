@@ -1,0 +1,16 @@
+//! Till shop: a ticket-and-merch checkout built on the `till` library.
+pub use shop::Shop
+pub use factory::{FactoryMsg, ShopFactory, ShopOpened}
+pub use msgs::{Erc721Msg, RefundMsg, SaleMsg, SellerMsg, ViewMsg}
+pub use state::{
+    ACTIVE,
+    AccountingView,
+    CANCELLED,
+    ItemView,
+    KIND_MERCH,
+    KIND_OTHER,
+    KIND_TICKET,
+    PAUSED,
+    PassView,
+    RELEASED,
+}

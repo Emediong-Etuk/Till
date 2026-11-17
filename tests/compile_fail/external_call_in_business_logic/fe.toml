@@ -1,0 +1,6 @@
+[ingot]
+name = "external_call_in_business_logic"
+version = "0.1.0"
+
+[dependencies]
+till = { path = "../../../ingots/till" }

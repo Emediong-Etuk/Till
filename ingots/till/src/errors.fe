@@ -1,0 +1,27 @@
+//! Custom errors raised by Till. Each appears in a contract's ABI JSON as
+//! `"type": "error"`, so frontends decode them with the contract ABI.
+
+/// A handler tried to draw `wanted` wei, but only `left` remained of what the
+/// caller paid for this frame or batch.
+#[error]
+pub struct Overspend { pub wanted: Wei, pub left: Wei }
+
+/// A frame or batch ended with `left` wei that no handler accounted for.
+/// Reverting returns the wei to the payer instead of leaving it stuck.
+#[error]
+pub struct Unspent { pub left: Wei }
+
+/// A batch was opened while another batch of the same contract was open.
+#[error]
+pub struct NestedBatch {}
+
+/// A handler that runs foreign code (sends ETH, calls a receiver) was
+/// reached while a batch budget was live.
+#[error]
+pub struct ExternalCallInBatch {}
+
+/// A metered handler was entered while a batch was open, from a frame whose
+/// caller is not the batch payer: some other contract re-entered mid-batch
+/// and tried to spend the payer's budget.
+#[error]
+pub struct ForeignFrame { pub caller: Address }

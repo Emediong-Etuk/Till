@@ -1,0 +1,6 @@
+[ingot]
+name = "metered_handler_without_call"
+version = "0.1.0"
+
+[dependencies]
+till = { path = "../../../ingots/till" }

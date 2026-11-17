@@ -1,0 +1,240 @@
+// Layer 1 for the shop: pure item-rule validators, no EVM state.
+use ingot::rules::*
+use ingot::state::{ACTIVE, CANCELLED, Item, PAUSED, RELEASED}
+use std::evm::wei
+
+fn item(status: u8, supply: u256, sold: u256, cap: u256) -> Item {
+    Item {
+        price: wei(10),
+        supply,
+        sold,
+        max_per_wallet: cap,
+        release_at: Timestamp::from_seconds(100),
+        escrow: wei(10) * sold,
+        status,
+        kind: 0,
+        label: 0,
+    }
+}
+
+#[test]
+fn purchase_ok_when_active_and_available() {
+    assert!(
+        check_purchase(
+                it: item(status: ACTIVE, supply: 10, sold: 0, cap: 0),
+                qty: 10,
+                held: 0,
+            )
+            == OK,
+    )
+}
+
+#[test]
+fn purchase_rejects_inactive() {
+    assert!(
+        check_purchase(
+                it: item(status: PAUSED, supply: 10, sold: 0, cap: 0),
+                qty: 1,
+                held: 0,
+            )
+            == E_INACTIVE,
+    )
+    assert!(
+        check_purchase(
+                it: item(status: CANCELLED, supply: 10, sold: 0, cap: 0),
+                qty: 1,
+                held: 0,
+            )
+            == E_INACTIVE,
+    )
+    assert!(
+        check_purchase(
+                it: item(status: RELEASED, supply: 10, sold: 0, cap: 0),
+                qty: 1,
+                held: 0,
+            )
+            == E_INACTIVE,
+    )
+    assert!(
+        check_purchase(
+                it: item(status: 0, supply: 10, sold: 0, cap: 0),
+                qty: 1,
+                held: 0,
+            )
+            == E_INACTIVE,
+    )
+}
+
+#[test]
+fn purchase_rejects_zero_qty() {
+    assert!(
+        check_purchase(
+                it: item(status: ACTIVE, supply: 10, sold: 0, cap: 0),
+                qty: 0,
+                held: 0,
+            )
+            == E_ZERO_QTY,
+    )
+}
+
+#[test]
+fn purchase_supply_boundary() {
+    let it = item(status: ACTIVE, supply: 10, sold: 7, cap: 0)
+    assert!(check_purchase(it, qty: 3, held: 0) == OK)
+    assert!(check_purchase(it, qty: 4, held: 0) == E_SOLD_OUT)
+}
+
+#[test]
+fn purchase_wallet_cap_boundary() {
+    let it = item(status: ACTIVE, supply: 100, sold: 0, cap: 4)
+    assert!(check_purchase(it, qty: 4, held: 0) == OK)
+    assert!(check_purchase(it, qty: 1, held: 3) == OK)
+    assert!(check_purchase(it, qty: 2, held: 3) == E_WALLET_CAP)
+    assert!(check_purchase(it, qty: 5, held: 0) == E_WALLET_CAP)
+}
+
+#[test]
+fn purchase_huge_qty_is_sold_out_not_overflow() {
+    let it = item(status: ACTIVE, supply: 10, sold: 0, cap: 3)
+    assert!(
+        check_purchase(
+                it,
+                qty: 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+                held: 0,
+            )
+            == E_SOLD_OUT,
+    )
+}
+
+#[test]
+fn new_item_rules() {
+    assert!(check_new(supply: 1, kind: 0) == OK)
+    assert!(check_new(supply: 1, kind: 2) == OK)
+    assert!(check_new(supply: 0, kind: 0) == E_INVALID)
+    assert!(check_new(supply: 1, kind: 3) == E_INVALID)
+}
+
+#[test]
+fn update_rules() {
+    assert!(
+        check_update(
+                it: item(status: ACTIVE, supply: 10, sold: 4, cap: 0),
+                supply: 4,
+            ) == OK,
+    )
+    assert!(
+        check_update(
+                it: item(status: PAUSED, supply: 10, sold: 4, cap: 0),
+                supply: 100,
+            ) == OK,
+    )
+    assert!(
+        check_update(
+                it: item(status: ACTIVE, supply: 10, sold: 4, cap: 0),
+                supply: 3,
+            )
+            == E_SUPPLY_BELOW_SOLD,
+    )
+    assert!(
+        check_update(
+                it: item(status: CANCELLED, supply: 10, sold: 4, cap: 0),
+                supply: 10,
+            )
+            == E_FINAL,
+    )
+    assert!(
+        check_update(
+                it: item(status: RELEASED, supply: 10, sold: 4, cap: 0),
+                supply: 10,
+            )
+            == E_FINAL,
+    )
+}
+
+#[test]
+fn extend_rules() {
+    let it = item(status: ACTIVE, supply: 10, sold: 0, cap: 0)
+    assert!(
+        check_extend(it, release_at: Timestamp::from_seconds(100)) == OK,
+    )
+    assert!(
+        check_extend(it, release_at: Timestamp::from_seconds(101)) == OK,
+    )
+    assert!(
+        check_extend(it, release_at: Timestamp::from_seconds(99)) == E_SHORTEN,
+    )
+    assert!(
+        check_extend(
+                it: item(status: CANCELLED, supply: 10, sold: 0, cap: 0),
+                release_at: Timestamp::from_seconds(500),
+            )
+            == E_FINAL,
+    )
+}
+
+#[test]
+fn release_rules() {
+    let it = item(status: ACTIVE, supply: 10, sold: 0, cap: 0)
+    assert!(
+        check_release(it, now: Timestamp::from_seconds(99)) == E_TOO_EARLY,
+    )
+    assert!(check_release(it, now: Timestamp::from_seconds(100)) == OK)
+    assert!(
+        check_release(
+                it: item(status: PAUSED, supply: 10, sold: 0, cap: 0),
+                now: Timestamp::from_seconds(100),
+            )
+            == OK,
+    )
+    assert!(
+        check_release(
+                it: item(status: CANCELLED, supply: 10, sold: 0, cap: 0),
+                now: Timestamp::from_seconds(200),
+            )
+            == E_FINAL,
+    )
+    assert!(
+        check_release(
+                it: item(status: RELEASED, supply: 10, sold: 0, cap: 0),
+                now: Timestamp::from_seconds(200),
+            )
+            == E_FINAL,
+    )
+}
+
+#[test]
+fn refund_rules() {
+    assert!(can_refund(status: CANCELLED, redeemed: false))
+    assert!(!can_refund(status: CANCELLED, redeemed: true))
+    assert!(!can_refund(status: ACTIVE, redeemed: false))
+    assert!(!can_refund(status: PAUSED, redeemed: false))
+    assert!(!can_refund(status: RELEASED, redeemed: false))
+}
+
+#[test]
+fn status_transitions() {
+    assert!(
+        can_pause(ACTIVE) && !can_pause(PAUSED) && !can_pause(CANCELLED) && !can_pause(RELEASED),
+    )
+    assert!(
+        can_resume(PAUSED)
+            && !can_resume(ACTIVE)
+            && !can_resume(CANCELLED)
+            && !can_resume(RELEASED),
+    )
+    assert!(
+        is_final(CANCELLED) && is_final(RELEASED) && !is_final(ACTIVE) && !is_final(PAUSED),
+    )
+}
+
+#[test]
+fn label_length_and_uri_helpers() {
+    assert!(ingot::uri::label_len(0) == 0)
+    assert!(ingot::uri::label_len(ingot::testkit::NAME) == 14)
+    assert!(
+        ingot::uri::label_len(
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+            )
+            == 32,
+    )
+}

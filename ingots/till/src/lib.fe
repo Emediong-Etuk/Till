@@ -1,0 +1,17 @@
+//! Till: payable batching for Fe contracts where every wei is counted once.
+//!
+//! - [`Till`] is a trait effect. Business logic that declares
+//!   `uses (till: mut Till)` can draw from what was paid, and the compiler
+//!   guarantees it can neither read `msg.value` nor run foreign code.
+//! - [`TransientTill`] keeps the budget in EIP-1153 transient storage and
+//!   makes std's multicall count `msg.value` once per batch.
+//! - [`LedgerTill`] is an in-memory implementation for pure unit tests.
+//! - [`Payment`] is a linear implementation whose destructor rejects unspent
+//!   wei, for handlers that never batch.
+pub use errors::{ExternalCallInBatch, ForeignFrame, NestedBatch, Overspend, Unspent}
+pub use effect::{Till, charge}
+pub use transient::{BatchReceipt, TillState, TransientTill}
+pub use ledger::LedgerTill
+pub use payment::Payment
+pub use metered::metered_multicall
+pub use calldata::entry

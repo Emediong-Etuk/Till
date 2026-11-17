@@ -1,0 +1,163 @@
+// Two-step ownership transfer (I12).
+use std::evm::{Evm, wei}
+use ingot::{SaleMsg, SellerMsg, ViewMsg}
+use ingot::errors::{NotOwner, NotPendingOwner}
+use ingot::testkit::{
+    GAS,
+    actor,
+    assert_reverted_with,
+    deploy_shop,
+    exec,
+    ticket,
+    try_exec,
+    try_seller,
+}
+use till::entry
+
+fn owner(_ shop: Address) -> Address uses (evm: mut Evm) {
+    evm.call(
+        addr: shop,
+        gas: GAS,
+        value: Wei::zero(),
+        message: ViewMsg::Owner {},
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn two_step_transfer() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let ada = actor(6)
+    assert!(
+        try_seller(shop, SellerMsg::TransferOwnership { to: ada }).success(),
+    )
+    // Nothing changes until the new owner accepts.
+    assert!(owner(shop) == evm.address())
+    let pending: Address = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ViewMsg::PendingOwner {},
+        )
+    assert!(pending == ada)
+    let _ = exec(
+        ada,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(SellerMsg::AcceptOwnership {}),
+    )
+    assert!(owner(shop) == ada)
+    let cleared: Address = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ViewMsg::PendingOwner {},
+        )
+    assert!(cleared == Address::zero())
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn accept_by_stranger_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let ada = actor(6)
+    let mallory = actor(3)
+    let _ = try_seller(shop, SellerMsg::TransferOwnership { to: ada })
+    assert_reverted_with(
+        try_exec(
+            mallory,
+            target: shop,
+            value: Wei::zero(),
+            data: entry(SellerMsg::AcceptOwnership {}),
+        ),
+        NotPendingOwner { caller: mallory },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn accept_without_pending_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::AcceptOwnership {}),
+        NotPendingOwner { caller: evm.address() },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn transfer_by_stranger_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let mallory = actor(3)
+    assert_reverted_with(
+        try_exec(
+            mallory,
+            target: shop,
+            value: Wei::zero(),
+            data: entry(SellerMsg::TransferOwnership { to: mallory }),
+        ),
+        NotOwner { caller: mallory },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn old_owner_loses_rights_new_owner_gains_them() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let ada = actor(6)
+    let alice = actor(1)
+    let item = ticket(shop, price: wei(1), supply: 10)
+    let _ = exec(
+        alice,
+        target: shop,
+        value: wei(9),
+        data: entry(SaleMsg::Tip { amount: wei(9) }),
+    )
+    let _ = try_seller(shop, SellerMsg::TransferOwnership { to: ada })
+    let _ = exec(
+        ada,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(SellerMsg::AcceptOwnership {}),
+    )
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::Pause { item }),
+        NotOwner { caller: evm.address() },
+    )
+    let _ = exec(
+        ada,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(SellerMsg::Pause { item }),
+    )
+    let before = evm.balance(ada)
+    let _ = exec(
+        ada,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(SellerMsg::Withdraw { to: ada }),
+    )
+    assert!(evm.balance(ada) == before + wei(9))
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn pending_owner_can_be_replaced() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let ada = actor(6)
+    let kemi = actor(5)
+    let _ = try_seller(shop, SellerMsg::TransferOwnership { to: ada })
+    let _ = try_seller(shop, SellerMsg::TransferOwnership { to: kemi })
+    assert_reverted_with(
+        try_exec(
+            ada,
+            target: shop,
+            value: Wei::zero(),
+            data: entry(SellerMsg::AcceptOwnership {}),
+        ),
+        NotPendingOwner { caller: ada },
+    )
+    let _ = exec(
+        kemi,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(SellerMsg::AcceptOwnership {}),
+    )
+    assert!(owner(shop) == kemi)
+}

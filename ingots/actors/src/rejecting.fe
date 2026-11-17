@@ -1,0 +1,29 @@
+//! `RejectingReceiver`: an account that refuses every ETH transfer, to test
+//! that a failed payout reverts cleanly and leaves the books unchanged.
+use std::abi::Bytes
+use std::evm::returndata::ReturnData
+use super::actor::ActorMsg
+
+pub contract RejectingReceiver uses (ctx: Ctx, call: mut Call) {
+    #[payable]
+    init()
+    {}
+
+    recv {
+        // Exec is payable only to forward value; receiving is refused below.
+        #[payable]
+        ActorMsg::Exec { target, value, data } -> Bytes
+        uses (ctx, mut call)
+        {
+            let out = call.try_call_raw(addr: target, gas: ctx.gas(), value, args: data.span())
+            if !out.success() {
+                std::evm::bubble_last_revert()
+            }
+            ReturnData::new().to_bytes()
+        }
+
+        _ {
+            std::evm::revert_empty()
+        }
+    }
+}

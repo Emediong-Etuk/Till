@@ -1,0 +1,162 @@
+// Factory: opening shops with CREATE2.
+use std::abi::Bytes32
+use std::evm::{Evm, predict_create2}
+use ingot::{FactoryMsg, Shop, ShopFactory, ViewMsg}
+use ingot::testkit::{GAS, NAME, SYMBOL, URI0, URI_LEN, actor, exec}
+use till::entry
+
+fn factory() -> Address uses (evm: mut Evm) {
+    evm.create2<ShopFactory>(value: Wei::zero(), args: (URI0, 0, URI_LEN), salt: 7)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn factory_opens_shop_owned_by_caller() uses (evm: mut Evm) {
+    let f = factory()
+    let shop: Address = evm
+        .call(
+            addr: f,
+            gas: GAS,
+            value: Wei::zero(),
+            message: FactoryMsg::Open {
+                name: Bytes32 { val: NAME },
+                symbol: Bytes32 { val: SYMBOL },
+            },
+        )
+    let owner: Address = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ViewMsg::Owner {},
+        )
+    assert!(owner == evm.address())
+    let recorded: Address = evm
+        .call(
+            addr: f,
+            gas: GAS,
+            value: Wei::zero(),
+            message: FactoryMsg::OwnerOfShop { shop },
+        )
+    assert!(recorded == evm.address())
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn factory_counts_and_indexes_shops() uses (evm: mut Evm) {
+    let f = factory()
+    let a: Address = evm
+        .call(
+            addr: f,
+            gas: GAS,
+            value: Wei::zero(),
+            message: FactoryMsg::Open {
+                name: Bytes32 { val: NAME },
+                symbol: Bytes32 { val: SYMBOL },
+            },
+        )
+    let b: Address = evm
+        .call(
+            addr: f,
+            gas: GAS,
+            value: Wei::zero(),
+            message: FactoryMsg::Open {
+                name: Bytes32 { val: NAME },
+                symbol: Bytes32 { val: SYMBOL },
+            },
+        )
+    assert!(a != b)
+    let n: u256 = evm.call(
+            addr: f,
+            gas: GAS,
+            value: Wei::zero(),
+            message: FactoryMsg::Count {},
+        )
+    assert!(n == 2)
+    let first: Address = evm
+        .call(
+            addr: f,
+            gas: GAS,
+            value: Wei::zero(),
+            message: FactoryMsg::ShopAt { index: 0 },
+        )
+    let second: Address = evm
+        .call(
+            addr: f,
+            gas: GAS,
+            value: Wei::zero(),
+            message: FactoryMsg::ShopAt { index: 1 },
+        )
+    assert!(first == a && second == b)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn factory_predict_matches_open() uses (evm: mut Evm) {
+    let f = factory()
+    let predicted: Address = evm
+        .call(
+            addr: f,
+            gas: GAS,
+            value: Wei::zero(),
+            message: FactoryMsg::Predict {
+                owner: evm.address(),
+                name: Bytes32 { val: NAME },
+                symbol: Bytes32 { val: SYMBOL },
+                salt: 0,
+            },
+        )
+    let shop: Address = evm
+        .call(
+            addr: f,
+            gas: GAS,
+            value: Wei::zero(),
+            message: FactoryMsg::Open {
+                name: Bytes32 { val: NAME },
+                symbol: Bytes32 { val: SYMBOL },
+            },
+        )
+    assert!(predicted == shop)
+    // The same derivation off-chain (what the app does) agrees.
+    let local = predict_create2<Shop>(
+        deployer: f,
+        args: (evm.address(), NAME, SYMBOL, URI0, 0, URI_LEN),
+        salt: 0,
+    )
+    assert!(local == shop)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn factory_shop_for_actor_is_owned_by_actor() uses (evm: mut Evm) {
+    let f = factory()
+    let ada = actor(1)
+    let out = exec(
+        ada,
+        target: f,
+        value: Wei::zero(),
+        data: entry(
+            FactoryMsg::Open { name: Bytes32 { val: NAME }, symbol: Bytes32 { val: SYMBOL } },
+        ),
+    )
+    let shop = Address::new(out.word_at(0))
+    let owner: Address = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ViewMsg::Owner {},
+        )
+    assert!(owner == ada)
+}
+
+#[test(should_revert, balance = 1_000_000_000_000_000_000_000_000)]
+fn factory_open_rejects_value() uses (evm: mut Evm) {
+    let f = factory()
+    let _: Address = evm
+        .call(
+            addr: f,
+            gas: GAS,
+            value: Wei::zero() + std::evm::wei(1),
+            message: FactoryMsg::Open {
+                name: Bytes32 { val: NAME },
+                symbol: Bytes32 { val: SYMBOL },
+            },
+        )
+}

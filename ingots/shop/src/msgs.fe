@@ -1,0 +1,110 @@
+//! Messages, with Solidity-compatible selectors so viem uses
+//! `out/Shop.abi.json` directly.
+use std::abi::{Bytes, Bytes32, Bytes4, DynString}
+use till::TillState
+use super::state::{AccountingView, ItemView, PassView}
+
+/// Metered buyer handlers: `#[payable]`, drawn from the Till.
+pub msg SaleMsg {
+    #[selector = sol("buy(uint256,uint256)")]
+    Buy { item: u256, qty: u256 } -> u256,
+    #[selector = sol("buyFor(uint256,uint256,address)")]
+    BuyFor { item: u256, qty: u256, to: Address } -> u256,
+    #[selector = sol("tip(uint256)")]
+    Tip { amount: Wei },
+    #[selector = sol("note(bytes32)")]
+    Note { text: Bytes32 },
+}
+
+/// Seller handlers: owner only, not payable.
+pub msg SellerMsg {
+    #[selector = sol("addItem(uint256,uint256,uint256,uint256,uint8,bytes32)")]
+    AddItem {
+        price: Wei,
+        supply: u256,
+        maxPerWallet: u256,
+        releaseAt: Timestamp,
+        kind: u8,
+        label: Bytes32,
+    } -> u256,
+    #[selector = sol("updateItem(uint256,uint256,uint256,uint256)")]
+    UpdateItem { item: u256, price: Wei, supply: u256, maxPerWallet: u256 },
+    #[selector = sol("pause(uint256)")]
+    Pause { item: u256 },
+    #[selector = sol("resume(uint256)")]
+    Resume { item: u256 },
+    #[selector = sol("cancel(uint256)")]
+    Cancel { item: u256 },
+    #[selector = sol("extendRelease(uint256,uint256)")]
+    ExtendRelease { item: u256, releaseAt: Timestamp },
+    #[selector = sol("release(uint256)")]
+    Release { item: u256 } -> Wei,
+    #[selector = sol("redeem(uint256,uint256,bytes)")]
+    Redeem { pass: u256, deadline: Timestamp, sig: Bytes } -> Wei,
+    #[selector = sol("withdraw(address)")]
+    Withdraw { to: Address } -> Wei,
+    #[selector = sol("sweep(address)")]
+    Sweep { to: Address } -> Wei,
+    #[selector = sol("transferOwnership(address)")]
+    TransferOwnership { to: Address },
+    #[selector = sol("acceptOwnership()")]
+    AcceptOwnership,
+}
+
+/// Buyer handler that pays out: not payable, refused inside batches.
+pub msg RefundMsg {
+    #[selector = sol("refund(uint256)")]
+    Refund { pass: u256 } -> Wei,
+}
+
+pub msg ViewMsg {
+    #[selector = sol("itemOf(uint256)")]
+    ItemOf { item: u256 } -> ItemView,
+    #[selector = sol("itemCount()")]
+    ItemCount -> u256,
+    #[selector = sol("passOf(uint256)")]
+    PassOf { pass: u256 } -> PassView,
+    #[selector = sol("accounting()")]
+    Accounting -> AccountingView,
+    #[selector = sol("tillState()")]
+    State -> TillState,
+    #[selector = sol("checkInDigest(uint256,uint256)")]
+    CheckInDigest { pass: u256, deadline: Timestamp } -> Bytes32,
+    #[selector = sol("owner()")]
+    Owner -> Address,
+    #[selector = sol("pendingOwner()")]
+    PendingOwner -> Address,
+    #[selector = sol("boughtBy(uint256,address)")]
+    BoughtBy { item: u256, who: Address } -> u256,
+    #[selector = sol("totalMinted()")]
+    TotalMinted -> u256,
+}
+
+pub msg Erc721Msg {
+    #[selector = sol("balanceOf(address)")]
+    BalanceOf { owner: Address } -> u256,
+    #[selector = sol("ownerOf(uint256)")]
+    OwnerOf { tokenId: u256 } -> Address,
+    #[selector = sol("approve(address,uint256)")]
+    Approve { to: Address, tokenId: u256 },
+    #[selector = sol("getApproved(uint256)")]
+    GetApproved { tokenId: u256 } -> Address,
+    #[selector = sol("setApprovalForAll(address,bool)")]
+    SetApprovalForAll { operator: Address, approved: bool },
+    #[selector = sol("isApprovedForAll(address,address)")]
+    IsApprovedForAll { owner: Address, operator: Address } -> bool,
+    #[selector = sol("transferFrom(address,address,uint256)")]
+    TransferFrom { from: Address, to: Address, tokenId: u256 },
+    #[selector = sol("safeTransferFrom(address,address,uint256)")]
+    SafeTransferFrom { from: Address, to: Address, tokenId: u256 },
+    #[selector = sol("safeTransferFrom(address,address,uint256,bytes)")]
+    SafeTransferFromData { from: Address, to: Address, tokenId: u256, data: Bytes },
+    #[selector = sol("supportsInterface(bytes4)")]
+    SupportsInterface { interfaceId: Bytes4 } -> bool,
+    #[selector = sol("name()")]
+    Name -> DynString,
+    #[selector = sol("symbol()")]
+    Symbol -> DynString,
+    #[selector = sol("tokenURI(uint256)")]
+    TokenUri { tokenId: u256 } -> DynString,
+}

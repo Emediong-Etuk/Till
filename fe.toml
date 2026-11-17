@@ -1,0 +1,9 @@
+[workspace]
+name = "till_workspace"
+version = "0.1.0"
+members = [
+  { path = "ingots/till", name = "till" },
+  { path = "ingots/actors", name = "actors" },
+  { path = "ingots/naive", name = "naive" },
+  { path = "ingots/shop", name = "shop" },
+]

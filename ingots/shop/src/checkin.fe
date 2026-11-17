@@ -1,0 +1,36 @@
+//! EIP-712 check-in: a pass holder signs `CheckIn(shop, pass, deadline)` and
+//! the seller submits it with `Redeem`. The seller cannot fake a check-in to
+//! unlock escrow, because only the current holder's key (or ERC-1271 wallet)
+//! produces a valid signature.
+//!
+//! Domain: `{name: "Till", version: "1", chainId, verifyingContract: shop}`.
+use core::keccak
+use std::evm::crypto::keccak_words
+use std::evm::eip712
+
+pub const NAME_HASH: u256 = keccak("Till")
+pub const VERSION_HASH: u256 = keccak("1")
+pub const CHECKIN_TYPEHASH: u256 = keccak("CheckIn(address shop,uint256 pass,uint256 deadline)")
+
+pub fn checkin_struct_hash(shop: Address, pass: u256, deadline: Timestamp) -> u256 {
+    keccak_words(
+        [CHECKIN_TYPEHASH, shop.word(), pass, deadline.as_seconds()],
+    )
+}
+
+pub fn domain_separator(chain_id: u256, shop: Address) -> u256 {
+    eip712::domain_separator(
+        name_hash: NAME_HASH,
+        version_hash: VERSION_HASH,
+        chain_id,
+        verifying_contract: shop,
+    )
+}
+
+/// The digest a holder signs to check `pass` in at `shop` on `chain_id`.
+pub fn checkin_digest(chain_id: u256, shop: Address, pass: u256, deadline: Timestamp) -> u256 {
+    eip712::digest(
+        domain_separator: domain_separator(chain_id, shop),
+        struct_hash: checkin_struct_hash(shop, pass, deadline),
+    )
+}

@@ -1,0 +1,10 @@
+// EXPECT: 8-0012 undefined variable `ctx`
+// Reading ctx directly in a function without the Ctx effect is not even a
+// name the function can see.
+use till::Till
+
+pub fn double_count() -> Wei uses (register: mut Till) {
+    let v = ctx.value()
+    register.take(v)
+    v
+}

@@ -1,0 +1,1563 @@
+{
+ "fe": [
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "till",
+   "name": "batch_empty_with_value_reverts_unspent"
+  },
+  {
+   "ok": true,
+   "secs": 0.0002,
+   "suite": "till",
+   "name": "batch_mixed_handlers_exact"
+  },
+  {
+   "ok": true,
+   "secs": 0.0002,
+   "suite": "till",
+   "name": "batch_of_notes_with_value_reverts_unspent"
+  },
+  {
+   "ok": true,
+   "secs": 0.0002,
+   "suite": "till",
+   "name": "batch_one_entry_exact"
+  },
+  {
+   "ok": true,
+   "secs": 0.0002,
+   "suite": "till",
+   "name": "batch_overspend_by_one_wei"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "till",
+   "name": "batch_fifty_entries_exact"
+  },
+  {
+   "ok": true,
+   "secs": 0.0002,
+   "suite": "till",
+   "name": "batch_ten_entries_exact"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "charge_draws_price_times_qty"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "charge_half_max_times_three_overflows"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "charge_over_budget_reverts_overspend"
+  },
+  {
+   "ok": true,
+   "secs": 0.0002,
+   "suite": "till",
+   "name": "batch_two_entries_exact"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "charge_qty_overflow_panics_before_drawing"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "charge_zero_price_draws_nothing"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "charge_zero_qty_draws_nothing"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "checkout_cart_exact"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "checkout_cart_one_wei_over_leaves_dust_visible"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "checkout_cart_one_wei_short"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "batch_unspent_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "cross_frame_failed_direct_then_batch"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "cross_frame_second_call_cannot_spend_leftover"
+  },
+  {
+   "ok": true,
+   "secs": 0.0002,
+   "suite": "till",
+   "name": "cross_frame_batch_after_batch"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "direct_buy_overflow_panics"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "cross_frame_through_relay"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "direct_buy_price_times_qty"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "direct_one_wei_over_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "direct_exact_payment_is_credited"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "direct_one_wei_under_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "direct_underpay_reverts_overspend"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "direct_overpay_reverts_unspent"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "direct_zero_for_zero_is_fine"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "forbidden_handler_in_zero_value_batch_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "forbidden_handler_in_paid_batch_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "ledger_batch_flag_is_reported"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "ledger_left_matches_budget"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "ledger_budget_is_monotone_non_increasing"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "ledger_take_exact_leaves_zero"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "ledger_multiple_takes_sum"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "ledger_take_over_reverts_overspend"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "ledger_wei_max_budget_exact"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "ledger_zero_takes_are_free"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "foreign_frame_mid_batch_is_rejected"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "nested_empty_batch_zero_value_still_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "non_metered_view_in_paid_batch_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "payment_exact_drops_cleanly"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "payment_is_never_a_batch"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "payment_overspend_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0002,
+   "suite": "till",
+   "name": "nested_batch_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "payment_probe_overspend_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "payment_probe_exact_ok"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "payment_unspent_reverts_at_scope_end"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "till",
+   "name": "payment_probe_unspent_reverts_from_destructor"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "till",
+   "name": "non_metered_view_in_zero_value_batch_ok"
+  },
+  {
+   "ok": true,
+   "secs": 0.0045,
+   "suite": "till",
+   "name": "batch_empty_zero_value_ok"
+  },
+  {
+   "ok": true,
+   "secs": 0.0043,
+   "suite": "till",
+   "name": "prop_till_seed_3"
+  },
+  {
+   "ok": true,
+   "secs": 0.0043,
+   "suite": "till",
+   "name": "prop_till_seed_4"
+  },
+  {
+   "ok": true,
+   "secs": 0.0089,
+   "suite": "till",
+   "name": "batch_double_count_reverts_overspend"
+  },
+  {
+   "ok": true,
+   "secs": 0.0002,
+   "suite": "till",
+   "name": "state_is_clean_after_batch"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "state_is_clean_after_reverted_batch"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "stray_value_to_zero_wei_handler_reverts_unspent"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "till",
+   "name": "value_to_non_metered_handler_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0002,
+   "suite": "till",
+   "name": "withdraw_outside_batch_pays_out"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "till",
+   "name": "state_is_clean_after_direct_call"
+  },
+  {
+   "ok": true,
+   "secs": 0.0047,
+   "suite": "till",
+   "name": "prop_till_seed_5"
+  },
+  {
+   "ok": true,
+   "secs": 0.0087,
+   "suite": "till",
+   "name": "prop_till_seed_0xfe"
+  },
+  {
+   "ok": true,
+   "secs": 0.0088,
+   "suite": "till",
+   "name": "prop_till_seed_2"
+  },
+  {
+   "ok": true,
+   "secs": 0.0098,
+   "suite": "till",
+   "name": "prop_till_seed_1"
+  },
+  {
+   "ok": true,
+   "secs": 0.0007,
+   "suite": "shop",
+   "name": "accept_by_stranger_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0009,
+   "suite": "shop",
+   "name": "accept_without_pending_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "accounting_view_reports_balance"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "add_item_bad_kind_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "add_item_by_stranger_reverts_not_owner"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "add_item_direct"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "approve_by_stranger_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0009,
+   "suite": "shop",
+   "name": "add_item_zero_supply_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "balance_of_zero_address_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0013,
+   "suite": "shop",
+   "name": "add_item_rejects_value"
+  },
+  {
+   "ok": true,
+   "secs": 0.0013,
+   "suite": "shop",
+   "name": "add_three_items_in_one_zero_value_batch"
+  },
+  {
+   "ok": true,
+   "secs": 0.0007,
+   "suite": "shop",
+   "name": "buy_after_release_time_still_escrowed"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "buy_huge_qty_reverts_sold_out_not_overflow"
+  },
+  {
+   "ok": true,
+   "secs": 0.0007,
+   "suite": "shop",
+   "name": "buy_exact_mints_and_escrows"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "buy_paused_item_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "buy_price_times_qty_overflow_panics"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "buy_records_price_per_pass"
+  },
+  {
+   "ok": true,
+   "secs": 0.0011,
+   "suite": "shop",
+   "name": "buy_overpay_reverts_unspent"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "buy_underpay_reverts_overspend"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "buy_unknown_item_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "buy_wei_max_price_needs_wei_max_value"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "buy_zero_qty_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "cancel_paused_item_ok"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "cancel_then_refund_pays_100_percent"
+  },
+  {
+   "ok": true,
+   "secs": 0.0008,
+   "suite": "shop",
+   "name": "cancel_is_final"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "checkout_duplicate_entry_reverts_overspend"
+  },
+  {
+   "ok": true,
+   "secs": 0.0008,
+   "suite": "shop",
+   "name": "checkin_digest_view_matches_viem"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "checkout_five_entries"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "checkout_one_entry"
+  },
+  {
+   "ok": true,
+   "secs": 0.0008,
+   "suite": "shop",
+   "name": "checkout_mixed_gift_tip_note"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "checkout_one_wei_over_reverts_unspent"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "checkout_sold_out_mid_batch_reverts_whole_batch"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "checkout_one_wei_under_reverts_overspend"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "cross_frame_relay_cannot_reuse_batch_budget"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "cross_frame_same_tx_direct_after_batch"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "digest_depends_on_every_field"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "digest_matches_viem_anvil"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "digest_matches_viem_chain_1"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "checkout_two_entries"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "digest_matches_viem_sepolia"
+  },
+  {
+   "ok": true,
+   "secs": 0.0008,
+   "suite": "shop",
+   "name": "checkout_twenty_entries"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "empty_checkout_with_value_reverts_unspent"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "double_refund_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "empty_checkout_zero_value_ok"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "extend_rules"
+  },
+  {
+   "ok": true,
+   "secs": 0.0011,
+   "suite": "shop",
+   "name": "door_batch_redeems_a_queue"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "extend_release_only_later"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "factory_open_rejects_value"
+  },
+  {
+   "ok": true,
+   "secs": 0.0008,
+   "suite": "shop",
+   "name": "factory_counts_and_indexes_shops"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "factory_opens_shop_owned_by_caller"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "factory_shop_for_actor_is_owned_by_actor"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "forced_eth_is_sweepable_and_never_breaks_books"
+  },
+  {
+   "ok": true,
+   "secs": 0.0011,
+   "suite": "shop",
+   "name": "factory_predict_matches_open"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "get_approved_of_unknown_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0007,
+   "suite": "shop",
+   "name": "free_item_with_zero_value"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "gift_to_zero_address_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "label_length_and_uri_helpers"
+  },
+  {
+   "ok": true,
+   "secs": 0.0014,
+   "suite": "shop",
+   "name": "fifty_entry_checkout"
+  },
+  {
+   "ok": true,
+   "secs": 0.0002,
+   "suite": "shop",
+   "name": "naive_tip_is_counted_per_entry"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "item_of_unknown_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "naive_shop_is_drained_by_batched_buys"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "new_item_rules"
+  },
+  {
+   "ok": true,
+   "secs": 0.0009,
+   "suite": "shop",
+   "name": "gift_applies_cap_to_recipient"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "name_and_symbol_strings"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "nested_multicall_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "non_payable_seller_op_in_paid_batch_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "note_direct_zero_value_ok"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "old_owner_loses_rights_new_owner_gains_them"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "operator_may_approve"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "one_tap_checkout_exact"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "owner_of_unknown_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "pass_ids_are_sequential_across_buyers"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "pause_blocks_sales_and_resume_restores"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "pending_owner_can_be_replaced"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "plain_transfer_in_zero_value_batch_ok"
+  },
+  {
+   "ok": true,
+   "secs": 0.0087,
+   "suite": "shop",
+   "name": "buy_beyond_supply_reverts_sold_out"
+  },
+  {
+   "ok": true,
+   "secs": 0.0086,
+   "suite": "shop",
+   "name": "eth_sent_before_deployment_is_sweepable"
+  },
+  {
+   "ok": true,
+   "secs": 0.0046,
+   "suite": "shop",
+   "name": "previous_holder_signature_dies_on_transfer"
+  },
+  {
+   "ok": true,
+   "secs": 0.0094,
+   "suite": "shop",
+   "name": "extend_release_of_cancelled_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "purchase_huge_qty_is_sold_out_not_overflow"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "purchase_ok_when_active_and_available"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "purchase_rejects_inactive"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "purchase_rejects_zero_qty"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "purchase_supply_boundary"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "purchase_wallet_cap_boundary"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "recover_64_byte_compact_vector"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "recover_65_byte_vector"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "recover_other_key_vector"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "recover_rejects_high_s_twin"
+  },
+  {
+   "ok": true,
+   "secs": 0.0007,
+   "suite": "shop",
+   "name": "redeem_after_release_moves_no_money"
+  },
+  {
+   "ok": true,
+   "secs": 0.0087,
+   "suite": "shop",
+   "name": "plain_eth_transfer_to_shop_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "redeem_cancelled_item_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "redeem_erc1271_holder"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "redeem_erc1271_without_approval_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "redeem_expired_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "redeem_garbage_signature_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "redeem_high_s_signature_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0089,
+   "suite": "shop",
+   "name": "redeem_by_stranger_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0007,
+   "suite": "shop",
+   "name": "redeem_other_shop_signature_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0019,
+   "suite": "shop",
+   "name": "redeem_signature_for_other_deadline_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0089,
+   "suite": "shop",
+   "name": "redeem_other_chain_signature_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0008,
+   "suite": "shop",
+   "name": "redeem_twice_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "redeem_unknown_pass_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0008,
+   "suite": "shop",
+   "name": "redeem_with_compact_signature"
+  },
+  {
+   "ok": true,
+   "secs": 0.0007,
+   "suite": "shop",
+   "name": "redeem_with_eoa_signature_releases_that_pass"
+  },
+  {
+   "ok": true,
+   "secs": 0.009,
+   "suite": "shop",
+   "name": "redeem_signature_for_other_pass_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0007,
+   "suite": "shop",
+   "name": "redeemed_pass_stays_redeemed_after_transfer"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "reentrant_receiver_on_safe_transfer_cannot_spend_others_money"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "reentrant_refund_receiver_cannot_buy_with_batch_budget"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "reentrant_refund_receiver_cannot_double_refund"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "refund_after_redeem_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "refund_after_redeem_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "refund_all_holders_empties_escrow"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "refund_by_approved_pays_the_holder"
+  },
+  {
+   "ok": true,
+   "secs": 0.0087,
+   "suite": "shop",
+   "name": "redeem_wrong_signer_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "refund_by_stranger_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "refund_in_zero_value_batch_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "refund_of_active_item_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "refund_of_released_item_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "refund_pays_what_was_paid_after_price_change"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "refund_rules"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "refund_to_rejecting_holder_reverts_and_keeps_books"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "release_after_time_moves_escrow_to_seller"
+  },
+  {
+   "ok": true,
+   "secs": 0.0086,
+   "suite": "shop",
+   "name": "refund_by_operator_ok"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "release_before_time_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "release_by_stranger_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "release_cancelled_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "shop",
+   "name": "release_rules"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "release_twice_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.007,
+   "suite": "shop",
+   "name": "release_at_exact_time_ok"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "released_item_stops_selling"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "resume_active_item_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "safe_transfer_in_zero_value_batch_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "safe_transfer_to_accepting_contract"
+  },
+  {
+   "ok": true,
+   "secs": 0.0448,
+   "suite": "shop",
+   "name": "prop_shop_seed_2"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "safe_transfer_to_refusing_contract_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "safe_transfer_with_data"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "status_transitions"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "stranger_seller_op_inside_batch_still_owner_checked"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "stray_value_to_note_reverts_unspent"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "stray_value_to_view_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "supports_erc165_erc721_metadata"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "sweep_by_stranger_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0046,
+   "suite": "shop",
+   "name": "safe_transfer_to_eoa"
+  },
+  {
+   "ok": true,
+   "secs": 0.0045,
+   "suite": "shop",
+   "name": "safe_transfer_to_non_receiver_contract_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0006,
+   "suite": "shop",
+   "name": "till_shop_rejects_the_same_sequence"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "tip_direct_goes_to_seller"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "tip_zero_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "tip_overpay_reverts_unspent"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "token_uri_of_unknown_pass_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "token_uri_is_base_shop_and_id"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "transfer_by_approved_clears_approval"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "transfer_by_operator"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "transfer_by_owner"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "transfer_by_stranger_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "transfer_by_stranger_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "transfer_to_zero_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "transfer_unknown_pass_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "transfer_wrong_from_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0,
+   "suite": "shop",
+   "name": "typehash_matches_type_string"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "two_step_transfer"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "update_by_stranger_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0001,
+   "suite": "shop",
+   "name": "update_rules"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "update_price_does_not_touch_paid_passes"
+  },
+  {
+   "ok": true,
+   "secs": 0.0045,
+   "suite": "shop",
+   "name": "till_shop_mallory_pays_honestly_for_five"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "vector_shop_address_matches_offchain_create2"
+  },
+  {
+   "ok": true,
+   "secs": 0.0005,
+   "suite": "shop",
+   "name": "wallet_cap_enforced_per_wallet"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "wallet_cap_single_large_order"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "withdraw_by_stranger_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "withdraw_in_zero_value_batch_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "withdraw_never_touches_escrow"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "withdraw_nothing_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "withdraw_released_funds_and_tips"
+  },
+  {
+   "ok": true,
+   "secs": 0.0045,
+   "suite": "shop",
+   "name": "update_supply_below_sold_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0044,
+   "suite": "shop",
+   "name": "update_unknown_item_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0004,
+   "suite": "shop",
+   "name": "withdraw_to_rejecting_receiver_keeps_funds"
+  },
+  {
+   "ok": true,
+   "secs": 0.0003,
+   "suite": "shop",
+   "name": "withdraw_to_zero_reverts"
+  },
+  {
+   "ok": true,
+   "secs": 0.0012,
+   "suite": "shop",
+   "name": "withdraw_to_reentrant_receiver_cannot_reenter"
+  },
+  {
+   "ok": true,
+   "secs": 0.066,
+   "suite": "shop",
+   "name": "prop_shop_seed_1"
+  },
+  {
+   "ok": true,
+   "secs": 0.0665,
+   "suite": "shop",
+   "name": "prop_shop_seed_0xfe"
+  },
+  {
+   "ok": true,
+   "secs": 0.0667,
+   "suite": "shop",
+   "name": "prop_shop_seed_4"
+  },
+  {
+   "ok": true,
+   "secs": 0.067,
+   "suite": "shop",
+   "name": "prop_shop_seed_5"
+  },
+  {
+   "ok": true,
+   "secs": 0.0736,
+   "suite": "shop",
+   "name": "prop_shop_seed_3"
+  }
+ ],
+ "props": [
+  {
+   "seed": 254,
+   "cases": 100,
+   "gas": 232133918
+  },
+  {
+   "seed": 1,
+   "cases": 100,
+   "gas": 282602640
+  },
+  {
+   "seed": 3,
+   "cases": 100,
+   "gas": 286938223
+  },
+  {
+   "seed": 2,
+   "cases": 100,
+   "gas": 266431604
+  },
+  {
+   "seed": 4,
+   "cases": 100,
+   "gas": 269136546
+  },
+  {
+   "seed": 5,
+   "cases": 100,
+   "gas": 250312460
+  }
+ ],
+ "compileFail": [
+  {
+   "ok": true,
+   "name": "control_compiles",
+   "expect": "OK"
+  },
+  {
+   "ok": true,
+   "name": "direct_ctx_in_business_logic",
+   "expect": "8-0012"
+  },
+  {
+   "ok": true,
+   "name": "external_call_in_business_logic",
+   "expect": "8-0036"
+  },
+  {
+   "ok": true,
+   "name": "metered_handler_without_call",
+   "expect": "8-0012"
+  },
+  {
+   "ok": true,
+   "name": "read_value_in_business_logic",
+   "expect": "8-0036"
+  },
+  {
+   "ok": true,
+   "name": "till_effect_is_not_ctx",
+   "expect": "8-0036"
+  }
+ ],
+ "at": "2026-11-17T16:24:29.500Z"
+}

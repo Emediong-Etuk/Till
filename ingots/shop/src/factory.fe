@@ -1,0 +1,95 @@
+//! `ShopFactory`: opens one `Shop` per seller with `CREATE2`, so the app can
+//! show a shop's address before the seller confirms.
+use std::abi::Bytes32
+use std::evm::{StorageMap, predict_create2}
+use super::shop::Shop
+
+pub msg FactoryMsg {
+    #[selector = sol("open(bytes32,bytes32)")]
+    Open { name: Bytes32, symbol: Bytes32 } -> Address,
+    #[selector = sol("shopAt(uint256)")]
+    ShopAt { index: u256 } -> Address,
+    #[selector = sol("count()")]
+    Count -> u256,
+    #[selector = sol("predict(address,bytes32,bytes32,uint256)")]
+    Predict { owner: Address, name: Bytes32, symbol: Bytes32, salt: u256 } -> Address,
+    #[selector = sol("ownerOfShop(address)")]
+    OwnerOfShop { shop: Address } -> Address,
+}
+
+#[event]
+pub struct ShopOpened {
+    #[indexed]
+    pub shop: Address,
+    #[indexed]
+    pub owner: Address,
+    pub name: Bytes32,
+    pub index: u256,
+}
+
+pub contract ShopFactory uses (ctx: Ctx, create: mut Create, log: mut Log) {
+    uri0: u256,
+    uri1: u256,
+    uri_len: u256,
+    mut count: u256,
+    mut shops: StorageMap<u256, Address>,
+    mut owner_of_shop: StorageMap<Address, Address>,
+
+    init(base0: u256, base1: u256, base_len: u256)
+    uses (mut uri0, mut uri1, mut uri_len)
+    {
+        uri0 = base0
+        uri1 = base1
+        uri_len = base_len
+    }
+
+    recv FactoryMsg {
+        Open { name, symbol } -> Address uses (
+            ctx,
+            mut create,
+            mut log,
+            uri0,
+            uri1,
+            uri_len,
+            mut count,
+            mut shops,
+            mut owner_of_shop,
+        ) {
+            let owner = ctx.caller()
+            let index = count
+            let shop = create
+                .create2<Shop>(
+                    value: Wei::zero(),
+                    args: (owner, name.val, symbol.val, uri0, uri1, uri_len),
+                    salt: index,
+                )
+            shops[index] = shop
+            owner_of_shop[shop] = owner
+            count = index + 1
+            log.emit(ShopOpened { shop, owner, name, index })
+            shop
+        }
+
+        ShopAt { index } -> Address uses (shops) {
+            shops[index]
+        }
+
+        Count -> u256 uses (count) {
+            count
+        }
+
+        Predict { owner, name, symbol, salt } -> Address
+        uses (ctx, uri0, uri1, uri_len)
+        {
+            predict_create2<Shop>(
+                deployer: ctx.address(),
+                args: (owner, name.val, symbol.val, uri0, uri1, uri_len),
+                salt,
+            )
+        }
+
+        OwnerOfShop { shop } -> Address uses (owner_of_shop) {
+            owner_of_shop[shop]
+        }
+    }
+}

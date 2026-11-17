@@ -1,0 +1,44 @@
+//! `Payment`: a linear `Till` for single-frame handlers that never batch.
+//!
+//! Its destructor reverts with `Unspent` if any wei is left when the value
+//! goes out of scope, so "forgot to account for part of the payment" becomes
+//! a revert the compiler inserts at scope end.
+//!
+//! `core::mem::forget` skips the destructor and with it the check. CI bans
+//! `forget(` in the `till` and `shop` ingots.
+use super::errors::{Overspend, Unspent}
+use super::effect::Till
+
+pub struct Payment { left: Wei }
+
+impl Payment {
+    /// A payment of `paid` wei, usually `ctx.value()`.
+    pub fn new(_ paid: Wei) -> Self {
+        Payment { left: paid }
+    }
+}
+
+impl Till for Payment {
+    fn take(mut self, _ amount: Wei) {
+        if amount > self.left {
+            revert_error(Overspend { wanted: amount, left: self.left })
+        }
+        self.left = self.left - amount
+    }
+
+    fn left(self) -> Wei {
+        self.left
+    }
+
+    fn in_batch(self) -> bool {
+        false
+    }
+}
+
+impl core::ops::Drop for Payment {
+    fn drop(own self) {
+        if self.left != Wei::zero() {
+            revert_error(Unspent { left: self.left })
+        }
+    }
+}

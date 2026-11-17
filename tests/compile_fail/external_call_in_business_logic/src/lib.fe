@@ -1,0 +1,16 @@
+// EXPECT: 8-0036 missing effect `Call`
+// Business logic tries to refund dust mid-purchase: foreign code would run
+// while a batch budget is live. The compiler refuses: no Call in scope.
+use till::{Till, charge}
+
+fn refund_dust(_ to: Address, _ amount: Wei) uses (call: mut Call) {
+    let _ = call.send_value(addr: to, gas: 0, value: amount)
+}
+
+pub fn generous_charge(price: Wei, qty: u256, buyer: Address) -> Wei
+uses (register: mut Till)
+{
+    let paid = charge(price, qty)
+    refund_dust(buyer, register.left())
+    paid
+}

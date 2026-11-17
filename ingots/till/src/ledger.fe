@@ -1,0 +1,36 @@
+//! `LedgerTill`: an in-memory `Till` for pure unit tests. It needs no EVM, no
+//! deployment and no transaction: drive business logic with
+//! `with (Till = mut ledger) { ... }` and inspect the ledger afterwards.
+use super::errors::Overspend
+use super::effect::Till
+
+pub struct LedgerTill { pub budget: Wei, pub batching: bool, pub drawn: Wei, pub takes: u256 }
+
+impl LedgerTill {
+    pub fn new(_ budget: Wei) -> Self {
+        LedgerTill { budget, batching: false, drawn: Wei::zero(), takes: 0 }
+    }
+
+    pub fn batch(_ budget: Wei) -> Self {
+        LedgerTill { budget, batching: true, drawn: Wei::zero(), takes: 0 }
+    }
+}
+
+impl Till for LedgerTill {
+    fn take(mut self, _ amount: Wei) {
+        if amount > self.budget {
+            revert_error(Overspend { wanted: amount, left: self.budget })
+        }
+        self.budget = self.budget - amount
+        self.drawn = self.drawn + amount
+        self.takes = self.takes + 1
+    }
+
+    fn left(self) -> Wei {
+        self.budget
+    }
+
+    fn in_batch(self) -> bool {
+        self.batching
+    }
+}

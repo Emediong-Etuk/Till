@@ -1,0 +1,24 @@
+//! `metered_multicall`: `std::evm::multicall` with a Till budget around it.
+//!
+//! std's multicall `DELEGATECALL`s every entry to the contract itself, so each
+//! entry sees the batch's full `msg.value`. Wrapping it in `open_batch` and
+//! `close_batch` makes the batch own one budget of `msg.value` that metered
+//! handlers draw from, and requires it to be spent exactly.
+use std::abi::{Bytes, DynArray}
+use std::evm::multicall
+use super::transient::{BatchReceipt, TransientTill}
+
+/// Run `data` as a metered batch paid by `ctx.caller()` with `ctx.value()`.
+/// Returns every entry's returndata and the batch receipt.
+///
+/// Reverts `NestedBatch` if called from inside a batch, `Overspend` if the
+/// entries draw more than was paid and `Unspent` if they draw less. Any
+/// failing entry reverts the whole batch with its revert data.
+pub fn metered_multicall(_ data: DynArray<Bytes>) -> (DynArray<Bytes>, BatchReceipt)
+uses (ctx: Ctx, call: mut Call, till: mut TransientTill)
+{
+    till.open_batch(ctx.value(), payer: ctx.caller())
+    let results = multicall::multicall(data)
+    let receipt = till.close_batch()
+    (results, receipt)
+}

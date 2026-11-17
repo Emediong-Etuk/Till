@@ -1,0 +1,6 @@
+[ingot]
+name = "read_value_in_business_logic"
+version = "0.1.0"
+
+[dependencies]
+till = { path = "../../../ingots/till" }

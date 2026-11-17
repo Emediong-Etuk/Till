@@ -1,0 +1,15 @@
+# Anvil's default keys are public test keys (they appear in Foundry's docs)
+# and are used deliberately for local demos and EIP-712 test vectors.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "public anvil test keys and generated vectors"
+paths = [
+  '''scripts/lib/encoding\.ts''',
+  '''scripts/gen-vectors\.ts''',
+  '''ingots/shop/src/vectors\.(fe|json)''',
+  '''app/lib/local-keys\.ts''',
+  '''app/e2e/fixtures\.ts''',
+  '''scripts/record-demo\.md''',
+]

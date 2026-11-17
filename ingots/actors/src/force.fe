@@ -1,0 +1,37 @@
+//! `ForceSend`: forces ETH into an address without calling it.
+//!
+//! Fe's std does not expose `SELFDESTRUCT` (`ops::selfdestruct` is
+//! `pub(ingot)`), so this builds a 22-byte init code by hand,
+//! `PUSH20 <to> SELFDESTRUCT`, and runs it with `CREATE` and a value. Under
+//! EIP-6780 a contract that self-destructs in its creating transaction still
+//! sends its balance, and the recipient's code never runs.
+use core::ptr
+
+pub msg ForceMsg {
+    #[selector = sol("force(address)")]
+    Force { to: Address } -> bool,
+}
+
+pub contract ForceSend uses (ctx: Ctx, create: mut Create) {
+    #[payable]
+    init()
+    {}
+
+    recv ForceMsg {
+        #[payable]
+        Force { to } -> bool uses (ctx, mut create) {
+            var code = ptr::MemBuffer::with_capacity(22)
+            code.push(0x73)
+            var i: u256 = 0
+            while i < 20 {
+                let shift = (19 - i) * 8
+                code.push(((to.word() >> shift) & 0xff).downcast_truncate())
+                i += 1
+            }
+            code.push(0xff)
+            let made = create.create_raw(value: ctx.value(), init_code: code.span())
+            // Self-destructed during creation: no code is left at `made`.
+            made == Address::zero() || ctx.extcodesize(made) == 0
+        }
+    }
+}

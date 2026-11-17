@@ -1,0 +1,86 @@
+//! `Actor`: a user played by a contract. Alice, Bob and Mallory in tests are
+//! each an `Actor`, funded at `create2` with `value:`.
+//!
+//! - `Exec` makes a raw call with value and bubbles any revert, so a test can
+//!   have the actor call anything.
+//! - It accepts plain ETH and ERC-721 safe transfers.
+//! - It is an ERC-1271 signer: it accepts a signature for any digest it was
+//!   told to `Approve`, so tests can check in a pass held by a contract.
+use std::abi::{Bytes, Bytes4, Bytes32}
+use std::evm::StorageMap
+use std::evm::returndata::ReturnData
+
+pub msg ActorMsg {
+    #[selector = sol("exec(address,uint256,bytes)")]
+    Exec { target: Address, value: Wei, data: Bytes } -> Bytes,
+    #[selector = sol("approveDigest(bytes32)")]
+    Approve { digest: Bytes32 },
+    #[selector = sol("setAcceptTokens(bool)")]
+    SetAcceptTokens { accept: bool },
+}
+
+pub msg Erc1271Msg {
+    #[selector = sol("isValidSignature(bytes32,bytes)")]
+    IsValidSignature { hash: Bytes32, signature: Bytes } -> Bytes4,
+}
+
+pub msg Erc721ReceiverMsg {
+    #[selector = sol("onERC721Received(address,address,uint256,bytes)")]
+    OnErc721Received { operator: Address, from: Address, tokenId: u256, data: Bytes } -> Bytes4,
+}
+
+const ERC1271_MAGIC: u256 = 0x1626ba7e
+const ERC721_RECEIVED: u256 = 0x150b7a02
+
+pub contract Actor uses (ctx: Ctx, call: mut Call) {
+    mut approved: StorageMap<u256, bool>,
+    mut refuse_tokens: bool,
+
+    #[payable]
+    init()
+    {}
+
+    recv {
+        #[payable]
+        ActorMsg::Exec { target, value, data } -> Bytes
+        uses (ctx, mut call)
+        {
+            let out = call.try_call_raw(addr: target, gas: ctx.gas(), value, args: data.span())
+            if !out.success() {
+                std::evm::bubble_last_revert()
+            }
+            ReturnData::new().to_bytes()
+        }
+
+        ActorMsg::Approve { digest } uses (mut approved) {
+            approved[digest.val] = true
+        }
+
+        ActorMsg::SetAcceptTokens { accept } uses (mut refuse_tokens) {
+            refuse_tokens = !accept
+        }
+
+        Erc1271Msg::IsValidSignature { hash, signature } -> Bytes4
+        uses (approved)
+        {
+            if approved[hash.val] {
+                Bytes4 { val: ERC1271_MAGIC }
+            } else {
+                Bytes4 { val: 0xffffffff }
+            }
+        }
+
+        Erc721ReceiverMsg::OnErc721Received { operator, from, tokenId, data } -> Bytes4
+        uses (refuse_tokens)
+        {
+            if refuse_tokens {
+                Bytes4 { val: 0 }
+            } else {
+                Bytes4 { val: ERC721_RECEIVED }
+            }
+        }
+
+        #[payable]
+        _ {}
+    }
+}

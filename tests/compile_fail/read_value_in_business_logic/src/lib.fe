@@ -1,0 +1,13 @@
+// EXPECT: 8-0036 missing effect `Ctx`
+// Business logic declares only the Till effect, then tries to read
+// msg.value through a helper. The compiler refuses: no Ctx in scope.
+use till::{Till, charge}
+
+fn paid_amount() -> Wei uses (ctx: Ctx) {
+    ctx.value()
+}
+
+pub fn sneaky_charge(price: Wei, qty: u256) -> Wei uses (register: mut Till) {
+    let _ = charge(price, qty)
+    paid_amount()
+}
