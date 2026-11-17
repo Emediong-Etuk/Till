@@ -1,0 +1,10 @@
+//! Building multicall entries.
+use core::abi::Encode
+use core::message::MsgVariant
+use std::abi::{Bytes, Sol}
+use std::evm::encode_msg_calldata
+
+/// The calldata of `message` as one multicall entry.
+pub fn entry<M>(_ message: own M) -> Bytes where M: MsgVariant<Sol> + Encode<Sol> {
+    Bytes::from_payload(source: encode_msg_calldata(message).span())
+}

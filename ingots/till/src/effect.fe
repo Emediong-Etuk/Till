@@ -1,0 +1,36 @@
+//! The `Till` trait effect: the only way business logic may touch money.
+//!
+//! A function that declares `uses (till: mut Till)` and nothing else can draw
+//! from what the caller paid, but it cannot read `msg.value` (it has no `Ctx`)
+//! and it cannot run foreign code (it has no `Call`). The compiler enforces
+//! both: calling a function that needs `Ctx` or `Call` from it is a
+//! `missing effect` error.
+//!
+//! This is the same pattern as `std::evm::random::Rng`: the code that needs
+//! the capability names the trait, and the caller picks the implementation
+//! with `with (Till = ...) { ... }`.
+
+/// A budget of wei that handlers draw from.
+pub trait Till {
+    /// Draw `amount` from the budget. Reverts with
+    /// `Overspend { wanted: amount, left }` if the budget is smaller.
+    fn take(mut self, _ amount: Wei)
+
+    /// The wei that is still undrawn.
+    fn left(self) -> Wei
+
+    /// Whether the budget belongs to a batch (a metered multicall) rather
+    /// than to a single direct call.
+    fn in_batch(self) -> bool
+}
+
+/// Draw `price * qty` from the till and return it. Multiplication is checked,
+/// so an overflowing cart fails with `Panic(0x11)` before anything is drawn.
+///
+/// Compiler-checked: this function cannot read `msg.value` and cannot run
+/// foreign code, because its only effect is `Till`.
+pub fn charge(price: Wei, qty: u256) -> Wei uses (till: mut Till) {
+    let total = price * qty
+    till.take(total)
+    total
+}

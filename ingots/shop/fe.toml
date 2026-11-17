@@ -1,0 +1,8 @@
+[ingot]
+name = "shop"
+version = "0.1.0"
+
+[dependencies]
+till = true
+actors = true
+naive = true

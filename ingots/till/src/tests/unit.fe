@@ -1,0 +1,250 @@
+// Layer 1: pure unit tests. No EVM, no deployment: business logic runs
+// against the in-memory `LedgerTill` (and the linear `Payment`) through the
+// `Till` trait effect.
+use ingot::{LedgerTill, Payment, Till, charge}
+use std::evm::{ether, gwei, wei}
+
+const WEI_MAX: u256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+
+/// A second piece of business logic over the same effect: a cart of lines.
+fn checkout(prices: [Wei; 3], qtys: [u256; 3], tip: Wei) -> Wei
+uses (till: mut Till)
+{
+    var total = Wei::zero()
+    var i: usize = 0
+    while i < 3 {
+        total = total + charge(price: prices[i], qty: qtys[i])
+        i += 1
+    }
+    till.take(tip)
+    total + tip
+}
+
+#[test]
+fn ledger_take_exact_leaves_zero() {
+    var t = LedgerTill::new(wei(100))
+    with (Till = mut t) {
+        till_take(wei(100))
+    }
+    assert!(t.budget == Wei::zero())
+    assert!(t.drawn == wei(100))
+    assert!(t.takes == 1)
+}
+
+fn till_take(_ amount: Wei) uses (till: mut Till) {
+    till.take(amount)
+}
+
+fn till_left() -> Wei uses (till: Till) {
+    till.left()
+}
+
+#[test]
+fn charge_draws_price_times_qty() {
+    var t = LedgerTill::new(wei(100))
+    let paid = with (Till = mut t) {
+        charge(price: wei(30), qty: 3)
+    }
+    assert!(paid == wei(90))
+    assert!(t.budget == wei(10))
+}
+
+#[test(should_revert, selector = 0x9539bfce)]
+fn ledger_take_over_reverts_overspend() {
+    var t = LedgerTill::new(wei(10))
+    with (Till = mut t) {
+        till_take(wei(11))
+    }
+}
+
+#[test(should_revert, selector = 0x9539bfce)]
+fn charge_over_budget_reverts_overspend() {
+    var t = LedgerTill::new(wei(10))
+    let _ = with (Till = mut t) {
+        charge(price: wei(30), qty: 1)
+    }
+}
+
+#[test]
+fn ledger_multiple_takes_sum() {
+    var t = LedgerTill::new(ether(1))
+    with (Till = mut t) {
+        till_take(gwei(1))
+        till_take(gwei(2))
+        till_take(gwei(3))
+    }
+    assert!(t.drawn == gwei(6))
+    assert!(t.budget == ether(1) - gwei(6))
+    assert!(t.takes == 3)
+}
+
+#[test]
+fn ledger_zero_takes_are_free() {
+    var t = LedgerTill::new(Wei::zero())
+    with (Till = mut t) {
+        till_take(Wei::zero())
+        till_take(Wei::zero())
+    }
+    assert!(t.budget == Wei::zero())
+    assert!(t.takes == 2)
+}
+
+#[test]
+fn charge_zero_qty_draws_nothing() {
+    var t = LedgerTill::new(wei(5))
+    let paid = with (Till = mut t) {
+        charge(price: wei(1000), qty: 0)
+    }
+    assert!(paid == Wei::zero())
+    assert!(t.budget == wei(5))
+}
+
+#[test]
+fn charge_zero_price_draws_nothing() {
+    var t = LedgerTill::new(wei(5))
+    let paid = with (Till = mut t) {
+        charge(price: Wei::zero(), qty: 1000)
+    }
+    assert!(paid == Wei::zero())
+    assert!(t.budget == wei(5))
+}
+
+#[test]
+fn ledger_wei_max_budget_exact() {
+    var t = LedgerTill::new(wei(WEI_MAX))
+    let paid = with (Till = mut t) {
+        charge(price: wei(WEI_MAX), qty: 1)
+    }
+    assert!(paid == wei(WEI_MAX))
+    assert!(t.budget == Wei::zero())
+}
+
+#[test(should_revert, panic = 0x11)]
+fn charge_qty_overflow_panics_before_drawing() {
+    var t = LedgerTill::new(wei(WEI_MAX))
+    let _ = with (Till = mut t) {
+        charge(price: wei(WEI_MAX), qty: 2)
+    }
+}
+
+#[test(should_revert, panic = 0x11)]
+fn charge_half_max_times_three_overflows() {
+    var t = LedgerTill::new(wei(WEI_MAX))
+    let _ = with (Till = mut t) {
+        charge(price: wei(WEI_MAX / 2 + 1), qty: 2)
+    }
+}
+
+#[test]
+fn ledger_budget_is_monotone_non_increasing() {
+    var t = LedgerTill::new(wei(1000))
+    var last = t.budget
+    var i: u256 = 0
+    while i < 40 {
+        with (Till = mut t) {
+            till_take(wei(i % 7))
+        }
+        assert!(t.budget <= last)
+        assert!(t.budget + t.drawn == wei(1000))
+        last = t.budget
+        i += 1
+    }
+}
+
+#[test]
+fn ledger_left_matches_budget() {
+    var t = LedgerTill::new(wei(42))
+    let before = with (Till = t) {
+        till_left()
+    }
+    with (Till = mut t) {
+        till_take(wei(40))
+    }
+    let after = with (Till = t) {
+        till_left()
+    }
+    assert!(before == wei(42))
+    assert!(after == wei(2))
+}
+
+#[test]
+fn ledger_batch_flag_is_reported() {
+    let direct = LedgerTill::new(wei(1))
+    let batch = LedgerTill::batch(wei(1))
+    assert!(!direct.in_batch())
+    assert!(batch.in_batch())
+}
+
+#[test]
+fn checkout_cart_exact() {
+    var t = LedgerTill::new(wei(3 * 10 + 2 * 25 + 7 + 5))
+    let total = with (Till = mut t) {
+        checkout(
+            prices: [wei(10), wei(25), wei(7)],
+            qtys: [3, 2, 1],
+            tip: wei(5),
+        )
+    }
+    assert!(total == wei(92))
+    assert!(t.budget == Wei::zero())
+    assert!(t.takes == 4)
+}
+
+#[test(should_revert, selector = 0x9539bfce)]
+fn checkout_cart_one_wei_short() {
+    var t = LedgerTill::new(wei(91))
+    let _ = with (Till = mut t) {
+        checkout(
+            prices: [wei(10), wei(25), wei(7)],
+            qtys: [3, 2, 1],
+            tip: wei(5),
+        )
+    }
+}
+
+#[test]
+fn checkout_cart_one_wei_over_leaves_dust_visible() {
+    // The ledger itself does not reject leftovers; `TransientTill::end` and
+    // `close_batch` do. Here the leftover is visible to the caller.
+    var t = LedgerTill::new(wei(93))
+    let _ = with (Till = mut t) {
+        checkout(
+            prices: [wei(10), wei(25), wei(7)],
+            qtys: [3, 2, 1],
+            tip: wei(5),
+        )
+    }
+    assert!(t.budget == wei(1))
+}
+
+#[test]
+fn payment_exact_drops_cleanly() {
+    var p = Payment::new(wei(90))
+    let paid = with (Till = mut p) {
+        charge(price: wei(30), qty: 3)
+    }
+    assert!(paid == wei(90))
+    assert!(p.left() == Wei::zero())
+}
+
+#[test(should_revert, selector = 0x1223bd51)]
+fn payment_unspent_reverts_at_scope_end() {
+    var p = Payment::new(wei(91))
+    let _ = with (Till = mut p) {
+        charge(price: wei(30), qty: 3)
+    }
+}
+
+#[test(should_revert, selector = 0x9539bfce)]
+fn payment_overspend_reverts() {
+    var p = Payment::new(wei(89))
+    let _ = with (Till = mut p) {
+        charge(price: wei(30), qty: 3)
+    }
+}
+
+#[test]
+fn payment_is_never_a_batch() {
+    let p = Payment::new(Wei::zero())
+    assert!(!p.in_batch())
+}

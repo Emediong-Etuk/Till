@@ -1,0 +1,6 @@
+[ingot]
+name = "naive"
+version = "0.1.0"
+
+[dependencies]
+actors = true

@@ -1,0 +1,130 @@
+//! `TransientTill`: the production `Till`, kept in EIP-1153 transient storage
+//! as a contract field.
+//!
+//! Lifecycle of one top-level call frame:
+//!
+//! - direct call to a metered handler: `begin(value, caller)` sets the budget
+//!   to `msg.value`; handlers `take` from it; `end()` requires it to be zero.
+//! - metered multicall: `open_batch(value, caller)` sets the budget once for
+//!   the whole batch. Each entry is `DELEGATECALL`ed to the contract and sees
+//!   the same `msg.value`, but `begin` ignores it while a batch is open, so
+//!   the payment is counted exactly once. `close_batch()` requires the budget
+//!   to be zero and clears all four slots.
+//!
+//! Every path that leaves a frame successfully leaves the four slots at zero,
+//! so a later frame in the same transaction (the next ERC-4337 UserOperation,
+//! a router's second call) starts from a clean till. A path that reverts also
+//! reverts its transient writes.
+use std::evm::TSlot
+use super::errors::{ExternalCallInBatch, ForeignFrame, NestedBatch, Overspend, Unspent}
+use super::effect::Till
+
+/// The state of a till, for views and tests.
+#[abi]
+pub struct TillState { pub left: Wei, pub batching: bool, pub entries: u256 }
+
+/// What a metered batch settled: who paid and how many metered entries ran.
+pub struct BatchReceipt { pub payer: Address, pub entries: u256 }
+
+impl Copy for BatchReceipt {}
+
+pub struct TransientTill {
+    budget: TSlot<Wei>,
+    batching: TSlot<bool>,
+    payer: TSlot<Address>,
+    entries: TSlot<u256>,
+}
+
+impl TransientTill {
+    /// Start a metered handler. `paid` is `ctx.value()` and `from` is
+    /// `ctx.caller()`; this is the one place a metered handler reads them.
+    ///
+    /// Outside a batch the budget becomes `paid`. Inside a batch the batch
+    /// already owns the budget, so `paid` (the same value every entry sees) is
+    /// not counted again; the frame must come from the batch payer, otherwise
+    /// some foreign contract is re-entering mid-batch (`ForeignFrame`).
+    pub fn begin(mut self, _ paid: Wei, from: Address) {
+        if self.batching.read() {
+            if from != self.payer.read() {
+                revert_error(ForeignFrame { caller: from })
+            }
+        } else {
+            self.budget.write(paid)
+        }
+    }
+
+    /// Finish a metered handler. Outside a batch the budget must be fully
+    /// drawn (`Unspent` otherwise). Inside a batch the entry is counted and
+    /// the leftover stays for later entries.
+    pub fn end(mut self) {
+        if self.batching.read() {
+            self.entries.write(self.entries.read() + 1)
+        } else {
+            let left = self.budget.read()
+            if left != Wei::zero() {
+                revert_error(Unspent { left })
+            }
+        }
+    }
+
+    /// Open a batch budget of `paid` wei for `payer`. Reverts `NestedBatch`
+    /// if a batch is already open.
+    pub fn open_batch(mut self, _ paid: Wei, payer: Address) {
+        if self.batching.read() {
+            revert_error(NestedBatch {})
+        }
+        self.batching.write(true)
+        self.budget.write(paid)
+        self.payer.write(payer)
+        self.entries.write(0)
+    }
+
+    /// Close the batch: the budget must be fully drawn (`Unspent`
+    /// otherwise). Clears every slot and returns the receipt.
+    pub fn close_batch(mut self) -> BatchReceipt {
+        let left = self.budget.read()
+        if left != Wei::zero() {
+            revert_error(Unspent { left })
+        }
+        let receipt = BatchReceipt { payer: self.payer.read(), entries: self.entries.read() }
+        self.budget.clear()
+        self.batching.clear()
+        self.payer.clear()
+        self.entries.clear()
+        receipt
+    }
+
+    /// Revert `ExternalCallInBatch` if a batch is open. Call it first in any
+    /// handler that sends ETH or calls foreign code.
+    pub fn forbid_in_batch(self) {
+        if self.batching.read() {
+            revert_error(ExternalCallInBatch {})
+        }
+    }
+
+    pub fn state(self) -> TillState {
+        TillState {
+            left: self.budget.read(),
+            batching: self.batching.read(),
+            entries: self.entries.read(),
+        }
+    }
+}
+
+impl Till for TransientTill {
+    fn take(mut self, _ amount: Wei) {
+        let left = self.budget.read()
+        if amount > left {
+            revert_error(Overspend { wanted: amount, left })
+        }
+        self.budget.write(left - amount)
+    }
+
+    fn left(self) -> Wei {
+        self.budget.read()
+    }
+
+    fn in_batch(self) -> bool {
+        self.batching.read()
+    }
+}

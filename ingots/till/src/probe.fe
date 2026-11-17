@@ -1,0 +1,104 @@
+//! `TillProbe`: a minimal contract that adopts Till, used by this ingot's EVM
+//! tests. It is the smallest correct integration: metered handlers bracket
+//! their work with `begin`/`end`, the batch handler uses `metered_multicall`,
+//! and the one handler that sends ETH calls `forbid_in_batch` first.
+use std::abi::{Bytes, DynArray}
+use std::evm::StorageMap
+use std::evm::multicall::MulticallMsg
+use super::effect::{Till, charge}
+use super::metered::metered_multicall
+use super::transient::{TillState, TransientTill}
+
+pub msg ProbeMsg {
+    /// Metered: draw exactly `amount` and credit it to the caller.
+    #[selector = sol("deposit(uint256)")]
+    Deposit { amount: Wei } -> Wei,
+    /// Metered: draw `price * qty`.
+    #[selector = sol("buy(uint256,uint256)")]
+    Buy { price: Wei, qty: u256 } -> Wei,
+    /// Metered, draws nothing: proves non-paying entries can join paid batches.
+    #[selector = sol("note(uint256)")]
+    Note { text: u256 } -> u256,
+    /// Not metered, not payable, sends ETH.
+    #[selector = sol("withdraw()")]
+    Withdraw -> Wei,
+    #[selector = sol("balanceOf(address)")]
+    BalanceOf { owner: Address } -> Wei,
+    #[selector = sol("tillState()")]
+    State -> TillState,
+    #[selector = sol("total()")]
+    Total -> Wei,
+}
+
+pub contract TillProbe uses (ctx: Ctx, call: mut Call) {
+    mut balances: StorageMap<Address, Wei>,
+    mut total: Wei,
+    mut register: TransientTill,
+
+    recv ProbeMsg {
+        #[payable]
+        Deposit { amount } -> Wei uses (ctx, mut register, mut balances, mut total) {
+            register.begin(ctx.value(), from: ctx.caller())
+            let paid = with (Till = register) {
+                charge(price: amount, qty: 1)
+            }
+            balances[ctx.caller()] += paid
+            total += paid
+            register.end()
+            paid
+        }
+
+        #[payable]
+        Buy { price, qty } -> Wei uses (ctx, mut register, mut balances, mut total) {
+            register.begin(ctx.value(), from: ctx.caller())
+            let paid = with (Till = register) {
+                charge(price, qty)
+            }
+            balances[ctx.caller()] += paid
+            total += paid
+            register.end()
+            paid
+        }
+
+        #[payable]
+        Note { text } -> u256 uses (ctx, mut register) {
+            register.begin(ctx.value(), from: ctx.caller())
+            register.end()
+            text
+        }
+
+        Withdraw -> Wei uses (ctx, mut call, mut balances, mut total, register) {
+            register.forbid_in_batch()
+            let who = ctx.caller()
+            let amount = balances[who]
+            balances[who] = Wei::zero()
+            total -= amount
+            assert!(
+                call.send_value(addr: who, gas: ctx.gas(), value: amount).success(),
+            )
+            amount
+        }
+
+        BalanceOf { owner } -> Wei uses (balances) {
+            balances[owner]
+        }
+
+        State -> TillState uses (register) {
+            register.state()
+        }
+
+        Total -> Wei uses (total) {
+            total
+        }
+    }
+
+    recv MulticallMsg {
+        #[payable]
+        Multicall { data } -> DynArray<Bytes> uses (ctx, mut call, mut register) {
+            let (results, _receipt) = with (TransientTill = register) {
+                metered_multicall(data)
+            }
+            results
+        }
+    }
+}

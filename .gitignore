@@ -1,0 +1,13 @@
+out/
+node_modules/
+.next/
+.env
+.env.*
+!.env.example
+*.log
+coverage/
+test-results/
+playwright-report/
+/tmp/
+.anvil/
+fe-test-report.tar.gz
