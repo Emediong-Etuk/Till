@@ -119,8 +119,8 @@ covers them (I6); `sweep` moves only the excess. `ForceSend` builds a
 
 **21. How heavy is the testing?**
 249 Fe tests (pure, EVM, 12 seeded property tests over 960 random batches with
-mutations), 6 negative compile tests, 48 E2E tests on real bytecode, 17
-Playwright specs. Every invariant and threat row maps to named tests
+mutations), 6 negative compile tests, 48 E2E tests on real bytecode, 20
+Playwright tests. Every invariant and threat row maps to named tests
 (`scripts/test-map.ts`), and `make report` checks they all pass.
 
 **22. How do I know the deployed bytecode is what you tested?**

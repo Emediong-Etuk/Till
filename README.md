@@ -10,8 +10,38 @@ checkout app that depends on it.
 | Fe version | `fe 26.6.0 (5b3f96a)` (`FE_VERSION: v26.6.0` in CI) |
 | Manifest | [`fe.toml`](fe.toml) (workspace) → `ingots/{till,shop,naive,actors}/fe.toml` |
 | Try it | `make setup && make test && make demo` → http://localhost:3000 |
-| Evidence | [`docs/TEST_REPORT.md`](docs/TEST_REPORT.md): 249 Fe tests (960 random batches), 6 negative compile tests, 48 E2E on real bytecode, 19 Playwright tests |
+| Evidence | [`docs/TEST_REPORT.md`](docs/TEST_REPORT.md): 249 Fe tests (960 random batches), 6 negative compile tests, 48 E2E on real bytecode, 20 Playwright tests |
 | License | Apache-2.0 |
+
+## Judges, start here
+
+No wallet, no keys, no real money: the app makes a test wallet on your device
+and runs on Sepolia. About two minutes on a phone.
+
+1. **Do:** open https://app-eight-gamma-97.vercel.app, scroll to **Try it**,
+   tap **Run the batch** on the *std multicall* tab, then on the *Till* tab.
+   **See:** one 0.001 ETH payment counted five times (5 passes), then Till
+   reverting with `Overspend`. This simulator runs in the page, with no chain.
+2. **Do:** tap the wallet chip at the top right, then **Get test ETH**.
+   **See:** test ETH arrives from the app's faucet in a few seconds.
+3. **Do:** open the [demo shop](https://app-eight-gamma-97.vercel.app/s/0x7878b2E1F9842a8a45d8f1614D4e2eCE3fBbb0C7),
+   add 2 *General admission*, 1 *Meetup T-shirt* and a tip, tap **Review**, then **Pay**.
+   **See:** a receipt with the exact total, one transaction, and 3 passes under **My passes**.
+4. **Do:** open [`/lab`](https://app-eight-gamma-97.vercel.app/lab) and run the attack
+   on *NaiveShop*, then on the *Till Shop*.
+   **See:** NaiveShop drained by 0.004 ETH of other buyers' money with Etherscan
+   links; the Till shop reverting with `Overspend`, nothing charged. The lab
+   restocks itself with honest purchases when earlier visitors have drained it.
+5. **Check without the app:** the [Sepolia transactions](#demo) below, and
+   `npx tsx scripts/verify-bytecode.ts --network sepolia`, which compares the
+   deployed code with a fresh `fe build` and prints `MATCH`.
+6. **Read the Fe:** [`ingots/shop/src/sales.fe`](ingots/shop/src/sales.fe)
+   (`purchase` has the `Till` effect and no `Ctx` or `Call`) and
+   [`tests/compile_fail/`](tests/compile_fail/) (what the compiler refuses).
+
+| Simulator | One payment | Bug | Fix |
+|---|---|---|---|
+| <img src="docs/img/simulator.png" width="200" alt="std multicall counts one payment five times"> | <img src="docs/img/checkout.png" width="200" alt="Receipt: 2 tickets, a T-shirt and a tip, 0.004 ETH paid once"> | <img src="docs/img/lab-naive.png" width="200" alt="NaiveShop drained by the batched attack"> | <img src="docs/img/lab-till.png" width="200" alt="The same attack on a Till shop reverts with Overspend"> |
 
 ## The problem
 
@@ -187,7 +217,7 @@ the app and scripts, Playwright (`make playwright`) for UI tests.
 | Fe seeded property tests (6 + 6 seeds, 960 random batches with 7 mutation kinds) | 12 |
 | Negative compile tests (effect violations must not compile) | 6 |
 | E2E on anvil, real bytecode, distinct EOAs | 48 |
-| Playwright (desktop + Pixel 7) | 17 |
+| Playwright (desktop + Pixel 7) | 20 |
 
 Every invariant and threat row maps to named tests in
 [`scripts/test-map.ts`](scripts/test-map.ts); the report checks they exist
@@ -202,7 +232,7 @@ and passed.
 - **CLI exploit:** `npx tsx scripts/demo-exploit.ts --target naive` drains
   NaiveShop; `--target till` reverts with `Overspend(1000000000000000, 0)`.
 - **Videos:** pitch (≤ 3:00) and technical walkthrough, scripted in
-  [docs/VIDEO_SCRIPTS.md](docs/VIDEO_SCRIPTS.md). _Links: to be added after recording._
+  [docs/VIDEO_SCRIPTS.md](docs/VIDEO_SCRIPTS.md) (narration and shot list as recorded). _Links: to be added after upload._
 - **Live app:** https://app-eight-gamma-97.vercel.app (Sepolia).
 - **Sepolia** (deployed with `make deploy-sepolia`; on-chain code verified
   against a fresh build with `scripts/verify-bytecode.ts`):
@@ -236,6 +266,9 @@ about 76k gas. Contract sizes: `Shop` 11.3 KB, `ShopFactory` 12.3 KB runtime
   release funds and still not hold the event.
 - `core::mem::forget` bypasses `Payment`'s Drop guard (CI bans `forget(` in
   `till` and `shop`; the shop uses `TransientTill`).
+- The live `/lab` and faucet are shared by every visitor. The faucet has a
+  daily budget and per-address cooldown; the lab restocks NaiveShop with
+  honest purchases (paid from the visitor's test wallet) when it runs low.
 - Till protects only handlers that use it. Inside the shop, a lint pins the
   payable handler set and `ctx.value()` usage; elsewhere it is up to adopters.
 - No ERC-4337 smart account or paymaster in the MVP; cross-frame safety is
