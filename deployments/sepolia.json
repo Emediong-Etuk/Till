@@ -1,0 +1,37 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "feVersion": "fe 26.6.0 (5b3f96a)",
+  "gitSha": "602e02eedeb68b896e606d2906aecaa06b640d83",
+  "deployedAt": "2026-11-17T17:09:14.507Z",
+  "deployer": "0x804e2029D7808CC4416cC1DaF5850ff8a644c53C",
+  "tokenUriBase": "https://app-eight-gamma-97.vercel.app/api/pass/",
+  "factory": {
+    "address": "0xa4feba51e2d02816dd3b5d057692edc08696ceb9",
+    "hash": "0xd748de58f7d58fc647cb169c324c2aa505f33abd51297ff61142451d2062d1bf",
+    "block": "12155774"
+  },
+  "demoShop": {
+    "address": "0x7878b2E1F9842a8a45d8f1614D4e2eCE3fBbb0C7",
+    "hash": "0x2d5760b15dfbd0c3fa4d9f2ac3e6aa6e0ebd5607a84f1fb0b204759252bda266",
+    "block": "12155775",
+    "itemsTx": "0x798a125b6309b6b67f25bb3e0911553cc25e9e2f90fc86b02c8b7eee6e299cde"
+  },
+  "naiveShop": {
+    "address": "0xcb85bde6ef9978a7378017abd6cb92046b359c16",
+    "hash": "0x0ab60dee27c0626d2b753d22ba86f9397c51b752a08d0a5835dae222d9faee34",
+    "block": "12155777",
+    "itemTx": "0x69e99dd54f8ac694a92aebb6e799dc729d7dc41999263677179566b0a2398b80"
+  },
+  "labShop": {
+    "address": "0x8deb2466d920461c9129406d45b8FacEa8A2f600",
+    "hash": "0xab1a97e80910af23f4646d93af2114b30ccc79c5b89aee3952f44b649d9fc90c",
+    "block": "12155780"
+  },
+  "examples": {
+    "batchedCheckout": "0xb3282737fc9224e292a4a90695f9a57d00d5fa5236523de130cc77ab566cfcfc",
+    "redeem": "0x17017ef3a1b6909086b66922bc2258cbfd3472fc6b98171cdabbde72c0bbb28b",
+    "refund": "0x292c1bbd7330c017d79e13ae55a66933d3fb03b5ce060a3bd23e3b699b54e2d8",
+    "withdraw": "0x99770ae21783169e74726fd77195c8f9e6cc5e5cedf01d000ca2b0209ebda6a1"
+  }
+}
