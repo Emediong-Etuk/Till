@@ -10,7 +10,7 @@ checkout app that depends on it.
 | Fe version | `fe 26.6.0 (5b3f96a)` (`FE_VERSION: v26.6.0` in CI) |
 | Manifest | [`fe.toml`](fe.toml) (workspace) → `ingots/{till,shop,naive,actors}/fe.toml` |
 | Try it | `make setup && make test && make demo` → http://localhost:3000 |
-| Evidence | [`docs/TEST_REPORT.md`](docs/TEST_REPORT.md): 249 Fe tests (960 random batches), 6 negative compile tests, 48 E2E on real bytecode, 17 Playwright specs |
+| Evidence | [`docs/TEST_REPORT.md`](docs/TEST_REPORT.md): 249 Fe tests (960 random batches), 6 negative compile tests, 48 E2E on real bytecode, 19 Playwright tests |
 | License | Apache-2.0 |
 
 ## The problem

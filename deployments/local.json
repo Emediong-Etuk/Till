@@ -2,36 +2,36 @@
   "network": "local",
   "chainId": 31337,
   "feVersion": "fe 26.6.0 (5b3f96a)",
-  "gitSha": "73b15b8ed981215b76dedce1bf00fd18c7b8060a",
-  "deployedAt": "2026-11-17T16:04:59.331Z",
+  "gitSha": "a7dd9d60297cdd0858cb0e8427d81c84f2118173",
+  "deployedAt": "2026-11-17T20:13:16.400Z",
   "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-  "tokenUriBase": "http://localhost:3000/api/pass/",
+  "tokenUriBase": "https://app-eight-gamma-97.vercel.app/api/pass/",
   "factory": {
     "address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
-    "hash": "0xdbe3798e19a0d2852d4f7254eaa00759ba99844e3e2abf4fa8611791abf32f06",
+    "hash": "0x7ba3168d627fa2eab0148ea6a5297557b119b5116f23a73bb4b06bebf4668c09",
     "block": "1"
   },
   "demoShop": {
-    "address": "0x309f2AfF3c073e209438ac7346c8714dAAFb46ab",
+    "address": "0xBE52264E220b9D2e13eacD4b5Dd8564951F05Ccb",
     "hash": "0x42a2ec1bd32e0a31d45048831fecdb371e032d0998e25c4a39b81935db93a303",
     "block": "2",
-    "itemsTx": "0xe2e7ac8bac1c8ae04212cdbbaf1541e719acf662be502e315e897ace9b4234fd"
+    "itemsTx": "0xadb40f98fe922bf67a41317b9ccd3c90ed859f5d943f67edc6ce86029cde64cb"
   },
   "naiveShop": {
     "address": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
-    "hash": "0x232c9a622f7d19e281896b25fb536d5f8295ec3409d06a7c3104bc10b87c391c",
+    "hash": "0xb555d9086fb6f9bcbc68ab76fd97da84d9e0083282ab1a60ff1c5bf08a76ba43",
     "block": "4",
-    "itemTx": "0x9bef67d4153619c8f76df5039b3044cd08ec48393f29d906853efc797efea1e0"
+    "itemTx": "0x63aa2684b4909e856a8b0ea3d963eaf243ec4f8ce7e300dccf8fe4895895ca94"
   },
   "labShop": {
-    "address": "0xdEC2963c504BAf888ED7A44312Cf5A7e11F7c2cd",
-    "hash": "0xb49dd33e763180722e7116c284c969cd301b0eacd9fcaf320276259667f0e87d",
+    "address": "0x61a1e21b727Ae80DF248C8B930E57D2d78226cE1",
+    "hash": "0xc6e8a6f683f2876b232925951ad096b0171977a58afbbe3c227315a2c3266803",
     "block": "7"
   },
   "examples": {
-    "batchedCheckout": "0x965d746d5714e5034526befa9e98adbd9c9d0edafe3f4aeec3e71f7a3adb7ce8",
-    "redeem": "0x8db3f3c5156a547b196ab7b279eae5ad26a46a3b9551c70b2e927dd4b36afd4c",
-    "refund": "0x52cb1e085870d1796ea8859091397994d1ee2dd598f1d632b5e0047c0cc2cb7b",
-    "withdraw": "0xe0d0ab9847d0753b7673b20058c61bbb9cf7d81fac9427f70eef119f06162e6c"
+    "batchedCheckout": "0x19205f6216d1f231a330cfced72f78a4a0d2c599164fd326a860f1a9838620b0",
+    "redeem": "0x72025351e50fbe6048eb142c3ef7c5ba00c955f32cc0ee943ed7b2b3a9b303d3",
+    "refund": "0xc77295099b1c6a7cc977537a90e6e4501f354592fc2a2f05444795dada9df7db",
+    "withdraw": "0x0595aefebb480075562288e000174ebb4db18452a924c44e1bc942f3eda51913"
   }
 }

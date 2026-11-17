@@ -2,7 +2,9 @@
 import { use, useCallback, useState } from "react";
 import Link from "next/link";
 import { type Address, type Hex } from "viem";
+import { AnimatePresence, motion } from "motion/react";
 import { Scanner } from "@/components/Scanner";
+import { Burst, Icon, Mark, Page, spring } from "@/components/ui";
 import { useShop } from "@/components/useShop";
 import { useWallet } from "@/components/Wallet";
 import { CHAIN } from "@/lib/config";
@@ -22,6 +24,7 @@ export default function Door({ params }: { params: Promise<{ shop: string }> }) 
   const [paste, setPaste] = useState("");
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [admitted, setAdmitted] = useState<number>(0);
+  const [burst, setBurst] = useState(0);
 
   const check = useCallback(
     async (text: string) => {
@@ -61,49 +64,80 @@ export default function Door({ params }: { params: Promise<{ shop: string }> }) 
     const h = await w.write(`Check in pass #${p.pass}`, { address: shop as Address, abi: shopAbi, functionName: "redeem", args: [BigInt(p.pass), BigInt(p.deadline), p.sig as Hex] });
     if (h) {
       setAdmitted((n) => n + 1);
+      setBurst((b) => b + 1);
       setVerdict({ ok: false, kind: "used", message: `Pass #${p.pass} checked in. Welcome!` });
       setPaste("");
       void s.reload();
     }
   };
 
+  const welcome = verdict && !verdict.ok && verdict.message.includes("Welcome");
   return (
-    <div className="space-y-5">
-      <div className="flex items-end justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-ink/50">Door · {s.name}</p>
-          <h1 className="text-3xl font-black tracking-tight">Check-in</h1>
+    <Page className="space-y-6">
+      <section className="grain relative overflow-hidden rounded-[1.8rem] bg-ink p-6 text-paper sm:p-8">
+        <div aria-hidden className="absolute -left-10 -top-24 h-60 w-60 animate-drift rounded-full bg-till-500/30 blur-3xl" />
+        <div className="relative flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[.16em] text-lime-300">Door · {s.name}</p>
+            <h1 className="mt-1 text-4xl font-black tracking-tight">Check-in</h1>
+            <p className="mt-2 max-w-md text-sm text-paper/65">Scan a pass. Its code must be signed by the pass&apos;s current holder; only then does their payment leave escrow.</p>
+          </div>
+          <Link href={`/s/${shop}/admin`} className="btn border border-white/15 bg-white/[.06] text-paper hover:bg-white/10">Dashboard</Link>
         </div>
-        <Link href={`/s/${shop}/admin`} className="btn-ghost">Dashboard</Link>
-      </div>
-      <Scanner onCode={(t) => void check(t)} />
-      <div className="card space-y-2">
-        <label htmlFor="paste" className="label">Or paste a pass code</label>
-        <textarea id="paste" data-testid="paste-code" className="input h-24 font-mono text-xs" value={paste} onChange={(e) => setPaste(e.target.value)} />
-        <button data-testid="check-code" className="btn-ghost w-full" disabled={!paste.trim()} onClick={() => void check(paste)}>Check code</button>
-      </div>
-      {verdict && (
-        <div
-          data-testid="verdict"
-          role="status"
-          className={`card text-center ${verdict.ok ? "border-till-500 bg-till-50" : verdict.message.includes("Welcome") ? "border-till-500" : "border-alarm-500 bg-alarm-500/5"}`}
-        >
-          {verdict.ok ? (
-            <>
-              <p className="text-5xl" aria-hidden>✓</p>
-              <p className="mt-2 text-xl font-black" data-testid="verdict-ok">Valid: {verdict.label}</p>
-              <p className="text-sm text-ink/60">Pass #{verdict.payload.pass} · holder {short(verdict.holder)}{verdict.contractHolder ? " (smart wallet, verified on-chain)" : ""}</p>
-              <button data-testid="redeem" className="btn-primary mt-4 w-full text-lg" onClick={() => void redeem()}>Admit & redeem</button>
-            </>
-          ) : (
-            <>
-              <p className="text-5xl" aria-hidden>{verdict.message.includes("Welcome") ? "✓" : "✕"}</p>
-              <p className="mt-2 text-lg font-bold" data-testid="verdict-message">{verdict.message}</p>
-            </>
-          )}
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="space-y-4">
+          <div className="card"><Scanner onCode={(t) => void check(t)} /></div>
+          <div className="card space-y-3">
+            <label htmlFor="paste" className="label">Or paste a pass code</label>
+            <textarea id="paste" data-testid="paste-code" className="input num h-24 text-xs" value={paste} onChange={(e) => setPaste(e.target.value)} />
+            <motion.button whileTap={{ scale: 0.98 }} data-testid="check-code" className="btn-dark w-full" disabled={!paste.trim()} onClick={() => void check(paste)}>
+              <Icon name="qr" className="h-4 w-4" /> Check code
+            </motion.button>
+          </div>
         </div>
-      )}
-      {admitted > 0 && <p className="text-center text-sm text-ink/60">{admitted} admitted this session</p>}
-    </div>
+
+        <div className="relative">
+          <AnimatePresence mode="wait">
+            {verdict ? (
+              <motion.div
+                key={verdict.ok ? `ok-${verdict.payload.pass}` : verdict.message}
+                data-testid="verdict"
+                role="status"
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.97 }}
+                transition={spring}
+                className={`relative flex min-h-[280px] flex-col items-center justify-center rounded-[1.6rem] border-2 p-6 text-center shadow-card ${
+                  verdict.ok ? "border-till-400 bg-till-50" : welcome ? "border-till-400 bg-white" : "border-alarm-400 bg-alarm-500/[.05]"
+                }`}
+              >
+                {welcome && <Burst fire={burst} />}
+                {verdict.ok ? (
+                  <>
+                    <Mark ok size={72} />
+                    <p className="mt-3 text-2xl font-black" data-testid="verdict-ok">Valid: {verdict.label}</p>
+                    <p className="mt-1 text-sm text-ink/60">Pass #{verdict.payload.pass} · holder {short(verdict.holder)}{verdict.contractHolder ? " (smart wallet, verified on-chain)" : ""}</p>
+                    <motion.button whileTap={{ scale: 0.97 }} data-testid="redeem" className="btn-primary mt-5 w-full text-lg" onClick={() => void redeem()}>Admit &amp; redeem</motion.button>
+                  </>
+                ) : (
+                  <>
+                    <Mark ok={!!welcome} size={72} />
+                    <p className="mt-3 text-xl font-bold" data-testid="verdict-message">{verdict.message}</p>
+                  </>
+                )}
+              </motion.div>
+            ) : (
+              <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.6rem] border-2 border-dashed border-ink/10 p-6 text-center text-ink/45">
+                <Icon name="qr" className="h-10 w-10" />
+                <p className="mt-3 text-sm">Waiting for a pass…</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {admitted > 0 && <p className="mt-3 text-center text-sm text-ink/60">{admitted} admitted this session</p>}
+        </div>
+      </div>
+    </Page>
   );
 }

@@ -2,6 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  devIndicators: false,
   eslint: { ignoreDuringBuilds: true },
 };
 export default nextConfig;

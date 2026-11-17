@@ -40,7 +40,9 @@ export function network(net: Net) {
     net === "sepolia"
       ? process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
       : process.env.LOCAL_RPC_URL ?? "http://127.0.0.1:8545";
-  const key = (net === "sepolia" ? process.env.DEPLOYER_PRIVATE_KEY : process.env.DEPLOYER_PRIVATE_KEY ?? ANVIL_KEYS[0]) as Hex | undefined;
+  // Local runs use anvil's key 0 unless LOCAL_DEPLOYER_PRIVATE_KEY is set, so a
+  // Sepolia DEPLOYER_PRIVATE_KEY in .env never leaks into `make demo`.
+  const key = (net === "sepolia" ? process.env.DEPLOYER_PRIVATE_KEY : process.env.LOCAL_DEPLOYER_PRIVATE_KEY ?? ANVIL_KEYS[0]) as Hex | undefined;
   if (!key) throw new Error("DEPLOYER_PRIVATE_KEY is not set (see .env.example)");
   const account = privateKeyToAccount(key);
   const client = createPublicClient({ chain, transport: http(rpc) });
