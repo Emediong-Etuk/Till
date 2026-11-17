@@ -18,7 +18,9 @@ pub contract C uses (ctx: Ctx, call: mut Call) {
         #[payable]
         Buy { price } -> Wei uses (ctx, mut register) {
             register.begin(ctx.value(), from: ctx.caller())
-            let paid = with (Till = register) { honest_charge(price, qty: 1) }
+            let paid = with (Till = register) {
+                honest_charge(price, qty: 1)
+            }
             register.end()
             paid
         }

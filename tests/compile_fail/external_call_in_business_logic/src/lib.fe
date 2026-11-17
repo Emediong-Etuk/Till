@@ -7,7 +7,9 @@ fn refund_dust(_ to: Address, _ amount: Wei) uses (call: mut Call) {
     let _ = call.send_value(addr: to, gas: 0, value: amount)
 }
 
-pub fn generous_charge(price: Wei, qty: u256, buyer: Address) -> Wei uses (register: mut Till) {
+pub fn generous_charge(price: Wei, qty: u256, buyer: Address) -> Wei
+uses (register: mut Till)
+{
     let paid = charge(price, qty)
     refund_dust(buyer, register.left())
     paid

@@ -15,7 +15,9 @@ pub contract C uses (ctx: Ctx, call: mut Call) {
         #[payable]
         Buy { price } -> Wei uses (ctx, mut register) {
             register.begin(ctx.value(), from: ctx.caller())
-            let paid = with (Till = register) { charge(price, qty: 1) }
+            let paid = with (Till = register) {
+                charge(price, qty: 1)
+            }
             let _ = call.send_value(addr: ctx.caller(), gas: 0, value: Wei::zero())
             register.end()
             paid
