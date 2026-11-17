@@ -42,9 +42,10 @@ test (`ingots/shop/src/tests/exploit.fe`, also live on `/lab`), honest buyers
 pay 9 ETH; Mallory pays 1 ETH once, batches five 1 ETH buys, gets 14 passes
 minted for 10 ETH paid, refunds her five, and leaves with **4 ETH of other
 buyers' money**. The shop can no longer refund everyone. This is the bug class
-samczsun disclosed in SushiSwap's MISO auction in 2021, `msg.value` reused
-inside a delegatecall batch
-([Paradigm, "Two Rights Might Make A Wrong"](https://www.paradigm.xyz/2021/08/two-rights-might-make-a-wrong)).
+samczsun disclosed in SushiSwap's MISO auction in August 2021, `msg.value`
+reused inside a delegatecall batch
+([samczsun, "Two Rights Might Make A Wrong"](https://samczsun.com/two-rights-might-make-a-wrong/);
+see also [Trail of Bits on the MISO and Opyn `msg.value` reuse](https://blog.trailofbits.com/2021/12/16/detecting-miso-and-opyns-msg-value-reuse-vulnerability-with-slither/)).
 
 Three adjacent problems come with it:
 
