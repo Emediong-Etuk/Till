@@ -26,8 +26,12 @@ const COOLDOWN = Number(process.env.FAUCET_COOLDOWN_SEC ?? (NETWORK === "local" 
 const IP_PER_HOUR = Number(process.env.FAUCET_IP_PER_HOUR ?? (NETWORK === "local" ? 1000 : 5));
 
 function faucetKey(): Hex | null {
-  const k = process.env.FAUCET_PRIVATE_KEY as Hex | undefined;
-  if (k && /^0x[0-9a-fA-F]{64}$/.test(k)) return k;
+  // Tolerate copy-paste noise from hosting dashboards: whitespace, quotes,
+  // and a missing 0x prefix.
+  const raw = (process.env.FAUCET_PRIVATE_KEY ?? "").trim().replace(/^["']|["']$/g, "").trim();
+  const k = (raw.startsWith("0x") ? raw : `0x${raw}`) as Hex;
+  if (/^0x[0-9a-fA-F]{64}$/.test(k)) return k;
+  if (raw) console.error("[faucet] FAUCET_PRIVATE_KEY is set but is not a 32-byte hex key");
   return NETWORK === "local" ? ANVIL_FAUCET_KEY : null;
 }
 
