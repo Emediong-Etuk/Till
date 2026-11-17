@@ -1,0 +1,295 @@
+// Layer 3: seeded property tests over whole carts.
+//
+// Each case draws a random cart from `KeccakRng::seeded(seed)`: 1-20
+// entries over 5 items, quantities 1-10, gifts to random wallets, tips and
+// notes. It is sent exactly, or with one mutation (one wei more or less, a
+// duplicated entry, a nested multicall, a non-metered seller handler, a
+// forbidden payout handler). After every case:
+//
+// - I1: an exact cart moves exactly its cost into the shop; a mutated cart
+//   reverts with the expected error and moves nothing.
+// - I3: the till is (0, false, 0).
+// - I6: balance == total_escrow + seller_available, the item escrows sum to
+//   total_escrow, and tips equal seller funds (nothing was released).
+// - I11: every item's sold count equals what the model expects.
+//
+// A failing case reverts with `ShopPropFail { seed, case, mutation, step }`
+// so it can be replayed with the same seed.
+use core::ptr::MemVec
+use std::abi::{Bytes, Bytes32, DynArray}
+use std::evm::{Call, Evm, has_selector, wei}
+use std::evm::multicall::{FailedCall, MulticallMsg}
+use std::evm::random::{KeccakRng, Rng}
+use actors::{ActorMsg, GasMeter, MeterMsg}
+use ingot::{SaleMsg, SellerMsg, ViewMsg}
+use ingot::testkit::{GAS, actor, books, deploy_shop, item_of, ticket, till_state}
+use till::{ExternalCallInBatch, NestedBatch, Overspend, Unspent, entry}
+
+#[error]
+pub struct ShopPropFail { pub seed: u256, pub case: u256, pub mutation: u256, pub step: u256 }
+
+const EXACT: u256 = 0
+const PLUS_ONE: u256 = 1
+const MINUS_ONE: u256 = 2
+const DUPLICATE: u256 = 3
+const NESTED: u256 = 4
+const NON_METERED: u256 = 5
+const FORBIDDEN: u256 = 6
+const MUTATIONS: u256 = 7
+const ITEMS: u256 = 5
+
+struct World { shop: Address, a0: Address, a1: Address, a2: Address, seed: u256 }
+
+impl Copy for World {}
+
+fn wallet(_ w: World, _ i: u256) -> Address {
+    if i == 0 {
+        w.a0
+    } else if i == 1 { w.a1 } else { w.a2 }
+}
+
+fn check(_ ok: bool, _ w: World, case: u256, mutation: u256, step: u256) {
+    if !ok {
+        revert_error(ShopPropFail { seed: w.seed, case, mutation, step })
+    }
+}
+
+/// One random cart entry, its cost, and (item, qty) it sells (item 99 = none).
+fn random_entry(_ w: World) -> (Bytes, Wei, u256, u256) uses (rng: mut Rng) {
+    let kind = rng.uniform(10)
+    if kind < 6 {
+        let item = rng.uniform(ITEMS)
+        let qty = rng.uniform(10) + 1
+        let price = wei((item + 1) * 1000)
+        (entry(SaleMsg::Buy { item, qty }), price * qty, item, qty)
+    } else if kind < 8 {
+        let item = rng.uniform(ITEMS)
+        let qty = rng.uniform(3) + 1
+        let to = wallet(w, rng.uniform(3))
+        let price = wei((item + 1) * 1000)
+        (entry(SaleMsg::BuyFor { item, qty, to }), price * qty, item, qty)
+    } else if kind == 8 {
+        let amount = wei(rng.uniform(5000) + 1)
+        (entry(SaleMsg::Tip { amount }), amount, 99, 0)
+    } else {
+        (entry(SaleMsg::Note { text: Bytes32 { val: rng.next() } }), Wei::zero(), 99, 0)
+    }
+}
+
+fn run_case(_ w: World, case: u256, sold: mut [u256; 5])
+uses (evm: mut Evm, rng: mut Rng)
+{
+    let n = rng.uniform(20) + 1
+    let payer = wallet(w, rng.uniform(3))
+    var data = MemVec<Bytes>::with_capacity((n + 1).downcast_unchecked())
+    var cost = Wei::zero()
+    var add: [u256; 5] = [0, 0, 0, 0, 0]
+    var dup = Bytes::empty()
+    var dup_cost = Wei::zero()
+    var i: u256 = 0
+    while i < n {
+        let (e, c, item, qty) = random_entry(w)
+        if dup_cost == Wei::zero() && c > Wei::zero() {
+            dup = e.clone()
+            dup_cost = c
+        }
+        if item < ITEMS {
+            add[item.downcast_unchecked()] += qty
+        }
+        data.push(e)
+        cost = cost + c
+        i += 1
+    }
+
+    var mutation = case % MUTATIONS
+    if (mutation == MINUS_ONE || mutation == DUPLICATE) && dup_cost == Wei::zero() {
+        mutation = EXACT
+    }
+    var value = cost
+    if mutation == PLUS_ONE {
+        value = cost + wei(1)
+    } else if mutation == MINUS_ONE {
+        value = cost - wei(1)
+    } else if mutation == DUPLICATE {
+        data.push(dup)
+    } else if mutation == NESTED {
+        data.push(entry(MulticallMsg::Multicall { data: DynArray::empty() }))
+    } else if mutation == NON_METERED {
+        data.push(entry(SellerMsg::Pause { item: 0 }))
+    } else if mutation == FORBIDDEN {
+        data.push(entry(SellerMsg::Withdraw { to: payer }))
+    }
+
+    let before = evm.balance(w.shop)
+    let out = with (Call = evm) {
+        evm.try_call(
+            addr: payer,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ActorMsg::Exec {
+                target: w.shop,
+                value,
+                data: entry(
+                    MulticallMsg::Multicall { data: DynArray::from_mem_vec(data) },
+                ),
+            },
+        )
+    }
+    let after = evm.balance(w.shop)
+
+    if mutation == EXACT {
+        check(out.success(), w, case, mutation, step: 1)
+        check(after == before + cost, w, case, mutation, step: 2)
+        var k: usize = 0
+        while k < 5 {
+            sold[k] += add[k]
+            k += 1
+        }
+    } else {
+        check(!out.success(), w, case, mutation, step: 3)
+        check(after == before, w, case, mutation, step: 4)
+        let r = out.returndata()
+        var expected = false
+        if mutation == PLUS_ONE {
+            expected = has_selector<Unspent>(r)
+        } else if mutation == MINUS_ONE || mutation == DUPLICATE {
+            expected = has_selector<Overspend>(r)
+        } else if mutation == NESTED {
+            expected = has_selector<NestedBatch>(r)
+        } else if mutation == NON_METERED {
+            // A non-payable entry rejects the inherited value without data;
+            // with nothing paid, the stranger hits the owner check instead.
+            expected = has_selector<FailedCall>(r) || has_selector<ingot::errors::NotOwner>(r)
+        } else {
+            expected = has_selector<FailedCall>(r) || has_selector<ExternalCallInBatch>(r)
+        }
+        check(expected, w, case, mutation, step: 5)
+    }
+
+    // I6
+    let b = books(w.shop)
+    check(
+        b.balance == b.total_escrow + b.seller_available,
+        w,
+        case,
+        mutation,
+        step: 6,
+    )
+    check(
+        b.tips_total == b.seller_available,
+        w,
+        case,
+        mutation,
+        step: 7,
+    )
+    var escrow_sum = Wei::zero()
+    var k: u256 = 0
+    while k < ITEMS {
+        let it = item_of(w.shop, k)
+        escrow_sum = escrow_sum + it.escrow
+        // I11
+        check(
+            it.sold == sold[k.downcast_unchecked()],
+            w,
+            case,
+            mutation,
+            step: 8,
+        )
+        check(
+            it.escrow == it.price * it.sold,
+            w,
+            case,
+            mutation,
+            step: 9,
+        )
+        k += 1
+    }
+    check(escrow_sum == b.total_escrow, w, case, mutation, step: 10)
+    // I3
+    let s = till_state(w.shop)
+    check(
+        s.left == Wei::zero() && !s.batching && s.entries == 0,
+        w,
+        case,
+        mutation,
+        step: 11,
+    )
+}
+
+fn run_seed(seed: u256, cases: u256) uses (evm: mut Evm) {
+    let start = evm.gas()
+    let shop = deploy_shop(seed)
+    var k: u256 = 0
+    while k < ITEMS {
+        let _ = ticket(shop, price: wei((k + 1) * 1000), supply: 1000000000)
+        k += 1
+    }
+    let w = World {
+        shop,
+        a0: actor(seed * 10 + 1),
+        a1: actor(seed * 10 + 2),
+        a2: actor(seed * 10 + 3),
+        seed,
+    }
+    var sold: [u256; 5] = [0, 0, 0, 0, 0]
+    var rng = KeccakRng::seeded(seed)
+    var c: u256 = 0
+    while c < cases {
+        with (Rng = mut rng) {
+            run_case(w, case: c, mut sold)
+        }
+        c += 1
+    }
+    var total: u256 = 0
+    var j: usize = 0
+    while j < 5 {
+        total += sold[j]
+        j += 1
+    }
+    let minted: u256 = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ViewMsg::TotalMinted {},
+        )
+    assert!(minted == total)
+    let meter = evm.create2<GasMeter>(value: Wei::zero(), args: (), salt: 4242)
+    // tag 0x70726f70 = "prop"
+    evm.call(
+        addr: meter,
+        gas: GAS,
+        value: Wei::zero(),
+        message: MeterMsg::Record { tag: 0x70726f70, a: seed, b: cases, c: start - evm.gas() },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn prop_shop_seed_1() uses (evm: mut Evm) {
+    run_seed(seed: 1, cases: 100)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn prop_shop_seed_2() uses (evm: mut Evm) {
+    run_seed(seed: 2, cases: 100)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn prop_shop_seed_3() uses (evm: mut Evm) {
+    run_seed(seed: 3, cases: 100)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn prop_shop_seed_4() uses (evm: mut Evm) {
+    run_seed(seed: 4, cases: 100)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn prop_shop_seed_5() uses (evm: mut Evm) {
+    run_seed(seed: 5, cases: 100)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn prop_shop_seed_0xfe() uses (evm: mut Evm) {
+    run_seed(seed: 0xfe, cases: 100)
+}

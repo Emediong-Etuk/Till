@@ -7,3 +7,4 @@ pub use relay::{Relay, RelayMsg}
 pub use reentrant::{ReentrantReceiver, ReentrantMsg, Report}
 pub use force::{ForceSend, ForceMsg}
 pub use rejecting::{RejectingReceiver}
+pub use meter::{GasMeter, Measured, MeterMsg}
