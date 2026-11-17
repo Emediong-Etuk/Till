@@ -1,0 +1,93 @@
+{
+  "batchedBuys": [
+    {
+      "entries": 1,
+      "till": "123236",
+      "naive": "89302",
+      "tillPerEntry": "123236",
+      "naivePerEntry": "89302",
+      "overheadPerEntry": "33934"
+    },
+    {
+      "entries": 2,
+      "till": "181485",
+      "naive": "142302",
+      "tillPerEntry": "90742",
+      "naivePerEntry": "71151",
+      "overheadPerEntry": "19591"
+    },
+    {
+      "entries": 5,
+      "till": "356290",
+      "naive": "301357",
+      "tillPerEntry": "71258",
+      "naivePerEntry": "60271",
+      "overheadPerEntry": "10986"
+    },
+    {
+      "entries": 10,
+      "till": "647654",
+      "naive": "566472",
+      "tillPerEntry": "64765",
+      "naivePerEntry": "56647",
+      "overheadPerEntry": "8118"
+    },
+    {
+      "entries": 20,
+      "till": "1230357",
+      "naive": "1096675",
+      "tillPerEntry": "61517",
+      "naivePerEntry": "54833",
+      "overheadPerEntry": "6684"
+    }
+  ],
+  "tillIsolated": [
+    {
+      "entries": 1,
+      "till": "38113",
+      "plain": "35524",
+      "tillOverhead": "2589",
+      "overheadPerEntry": "2589"
+    },
+    {
+      "entries": 2,
+      "till": "42598",
+      "plain": "38814",
+      "tillOverhead": "3784",
+      "overheadPerEntry": "1892"
+    },
+    {
+      "entries": 5,
+      "till": "56097",
+      "plain": "48731",
+      "tillOverhead": "7366",
+      "overheadPerEntry": "1473"
+    },
+    {
+      "entries": 10,
+      "till": "78633",
+      "plain": "65295",
+      "tillOverhead": "13338",
+      "overheadPerEntry": "1333"
+    },
+    {
+      "entries": 20,
+      "till": "123764",
+      "plain": "98483",
+      "tillOverhead": "25281",
+      "overheadPerEntry": "1264"
+    },
+    {
+      "entries": 50,
+      "till": "259902",
+      "plain": "198793",
+      "tillOverhead": "61109",
+      "overheadPerEntry": "1222"
+    }
+  ],
+  "directBuy": "115378",
+  "oneEntryBatch": "123236",
+  "redeem": "75618",
+  "refund": "50175",
+  "openShop": "2423183"
+}

@@ -1,0 +1,8 @@
+// EXPECT: 8-0036 missing effect `Till`
+// The converse: code that draws money must say so. A function without the
+// Till effect cannot call `charge`.
+use till::charge
+
+pub fn free_lunch(price: Wei) -> Wei {
+    charge(price, qty: 1)
+}

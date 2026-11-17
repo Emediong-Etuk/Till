@@ -1,0 +1,6 @@
+[ingot]
+name = "control_compiles"
+version = "0.1.0"
+
+[dependencies]
+till = { path = "../../../ingots/till" }

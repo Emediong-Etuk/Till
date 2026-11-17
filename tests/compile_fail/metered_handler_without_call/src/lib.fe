@@ -1,0 +1,24 @@
+// EXPECT: 8-0012 undefined variable `call`
+// A metered handler that does not list `mut call` in its `uses` clause
+// cannot send ETH, even though the contract itself has the Call effect.
+use till::{Till, TransientTill, charge}
+
+msg M {
+    #[selector = sol("buy(uint256)")]
+    Buy { price: Wei } -> Wei,
+}
+
+pub contract C uses (ctx: Ctx, call: mut Call) {
+    mut register: TransientTill,
+
+    recv M {
+        #[payable]
+        Buy { price } -> Wei uses (ctx, mut register) {
+            register.begin(ctx.value(), from: ctx.caller())
+            let paid = with (Till = register) { charge(price, qty: 1) }
+            let _ = call.send_value(addr: ctx.caller(), gas: 0, value: Wei::zero())
+            register.end()
+            paid
+        }
+    }
+}

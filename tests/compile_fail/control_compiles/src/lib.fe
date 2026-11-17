@@ -1,0 +1,26 @@
+// EXPECT: OK
+// Control case: the same shapes, written correctly, compile.
+use till::{Till, TransientTill, charge}
+
+msg M {
+    #[selector = sol("buy(uint256)")]
+    Buy { price: Wei } -> Wei,
+}
+
+pub fn honest_charge(price: Wei, qty: u256) -> Wei uses (register: mut Till) {
+    charge(price, qty)
+}
+
+pub contract C uses (ctx: Ctx, call: mut Call) {
+    mut register: TransientTill,
+
+    recv M {
+        #[payable]
+        Buy { price } -> Wei uses (ctx, mut register) {
+            register.begin(ctx.value(), from: ctx.caller())
+            let paid = with (Till = register) { honest_charge(price, qty: 1) }
+            register.end()
+            paid
+        }
+    }
+}

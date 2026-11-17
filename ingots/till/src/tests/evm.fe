@@ -804,3 +804,26 @@ pub contract Wallet uses (ctx: Ctx, call: mut Call) {
         _ {}
     }
 }
+
+/// `TillProbe` minus Till: the same deposit bookkeeping behind plain std
+/// multicall. Only the gas benchmark uses it, to isolate Till's own cost.
+/// It has the double-count bug on purpose.
+pub contract PlainProbe uses (ctx: Ctx, call: mut Call) {
+    mut balances: std::evm::StorageMap<Address, Wei>,
+    mut total: Wei,
+
+    recv {
+        #[payable]
+        ProbeMsg::Deposit { amount } -> Wei uses (ctx, mut balances, mut total) {
+            assert!(ctx.value() == amount)
+            balances[ctx.caller()] += amount
+            total += amount
+            amount
+        }
+
+        #[payable]
+        MulticallMsg::Multicall { data } -> DynArray<Bytes> uses (ctx, mut call) {
+            std::evm::multicall::multicall(data)
+        }
+    }
+}

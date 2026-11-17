@@ -1,0 +1,6 @@
+[ingot]
+name = "till_effect_is_not_ctx"
+version = "0.1.0"
+
+[dependencies]
+till = { path = "../../../ingots/till" }
