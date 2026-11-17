@@ -18,7 +18,7 @@ export const CHAIN: Chain = NETWORK === "sepolia" ? sepolia : localChain;
 
 const defaultRpcs =
   NETWORK === "sepolia"
-    ? ["https://ethereum-sepolia-rpc.publicnode.com", "https://sepolia.drpc.org", "https://rpc.sepolia.org"]
+    ? ["https://ethereum-sepolia-rpc.publicnode.com", "https://rpc.sepolia.org"]
     : ["http://127.0.0.1:8545"];
 
 export const RPC_URLS: string[] = (process.env.NEXT_PUBLIC_RPC_URLS ?? "")
