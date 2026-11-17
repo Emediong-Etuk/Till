@@ -10,4 +10,6 @@ paths = [
   '''scripts/gen-vectors\.ts''',
   '''ingots/shop/src/vectors\.(fe|json)''',
   '''app/lib/local-keys\.ts''',
+  '''app/e2e/fixtures\.ts''',
+  '''scripts/record-demo\.md''',
 ]
