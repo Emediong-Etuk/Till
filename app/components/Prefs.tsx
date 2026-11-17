@@ -25,7 +25,7 @@ export function Money({ wei, className = "", strong = false }: { wei: bigint; cl
   const { showNgn } = usePrefs();
   return (
     <span className={className}>
-      <span className={strong ? "font-bold" : ""}>{eth(wei)} ETH</span>
+      <span className={`num ${strong ? "font-bold" : ""}`}>{eth(wei)} ETH</span>
       {showNgn && <span className="block text-xs font-normal text-ink/50" title="Estimate at a fixed rate; not a price feed">{ngn(wei)}</span>}
     </span>
   );

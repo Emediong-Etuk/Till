@@ -59,9 +59,9 @@ export function Scanner({ onCode }: { onCode: (text: string) => void }) {
   return (
     <div className="space-y-2">
       {on ? (
-        <video ref={video} className="aspect-square w-full rounded-2xl bg-ink object-cover" muted playsInline aria-label="Camera preview" />
+        <video ref={video} className="aspect-square w-full rounded-2xl bg-ink object-cover ring-4 ring-till-400/40" muted playsInline aria-label="Camera preview" />
       ) : (
-        <button className="btn-primary w-full text-lg" onClick={() => { setErr(null); setOn(true); }}>Scan a pass</button>
+        <button className="btn-primary w-full text-lg" onClick={() => { setErr(null); setOn(true); }}>Scan a pass with the camera</button>
       )}
       {on && <button className="btn-ghost w-full" onClick={() => setOn(false)}>Stop camera</button>}
       {err && <p className="text-sm text-alarm-600">{err}</p>}
