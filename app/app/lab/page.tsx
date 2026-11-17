@@ -119,7 +119,7 @@ export default function Lab() {
                 {res[key].lines.map((l, i) => <p key={i}>{l}</p>)}
                 {res[key].hashes.map((h) => {
                   const u = txUrl(h);
-                  return u ? <a key={h} href={u} className="block text-till-700 underline" target="_blank" rel="noreferrer">View {h.slice(0, 10)}…</a> : <p key={h} className="font-mono text-xs text-ink/50">{h}</p>;
+                  return u ? <a key={h} href={u} className="block text-till-700 underline" target="_blank" rel="noreferrer">View {h.slice(0, 10)}…</a> : <p key={h} className="break-all font-mono text-xs text-ink/50">{h}</p>;
                 })}
               </div>
             )}

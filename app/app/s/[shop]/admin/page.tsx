@@ -22,10 +22,14 @@ type Sale = { buyer: Address; to: Address; item: bigint; qty: bigint; paid: bigi
 
 export default function Admin({ params }: { params: Promise<{ shop: string }> }) {
   const { shop } = use(params);
+  const setup = useSearchParams().get("setup") === "1";
   const s = useShop(shop);
   const w = useWallet();
-  const setup = useSearchParams().get("setup") === "1";
-  const [rows, setRows] = useState<Row[]>(DEFAULT_ROWS);
+  const [rows, setRows] = useState<Row[]>(setup ? DEFAULT_ROWS : []);
+  // A shop with no items yet starts from the suggested rows, setup link or not.
+  useEffect(() => {
+    if (!s.loading && !s.error && s.items.length === 0) setRows((r) => (r.length === 0 ? DEFAULT_ROWS : r));
+  }, [s.loading, s.error, s.items.length]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [url, setUrl] = useState("");
   const [edit, setEdit] = useState<{ id: bigint; price: string; supply: string; cap: string } | null>(null);
