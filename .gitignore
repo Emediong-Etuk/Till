@@ -11,3 +11,8 @@ playwright-report/
 /tmp/
 .anvil/
 fe-test-report.tar.gz
+app/playwright-results.json
+e2e/results.json
+app/next-env.d.ts
+*.tsbuildinfo
+.anvil.log

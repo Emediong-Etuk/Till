@@ -2,8 +2,8 @@
   "network": "local",
   "chainId": 31337,
   "feVersion": "fe 26.6.0 (5b3f96a)",
-  "gitSha": "91b6c5e99b77b073a0b4b9f5a721d6135fb318e5",
-  "deployedAt": "2026-11-17T15:55:13.626Z",
+  "gitSha": "73b15b8ed981215b76dedce1bf00fd18c7b8060a",
+  "deployedAt": "2026-11-17T16:04:59.331Z",
   "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   "tokenUriBase": "http://localhost:3000/api/pass/",
   "factory": {
@@ -15,23 +15,23 @@
     "address": "0x309f2AfF3c073e209438ac7346c8714dAAFb46ab",
     "hash": "0x42a2ec1bd32e0a31d45048831fecdb371e032d0998e25c4a39b81935db93a303",
     "block": "2",
-    "itemsTx": "0x9021918a5f31c353dc353767372bc88c6430693464ecdaf7b23da14adc6b1307"
+    "itemsTx": "0xe2e7ac8bac1c8ae04212cdbbaf1541e719acf662be502e315e897ace9b4234fd"
   },
   "naiveShop": {
     "address": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
-    "hash": "0x38f51ce894320a9f9c8e941b2c4443ba22c46e34d3fbd436df40756cd66a576f",
+    "hash": "0x232c9a622f7d19e281896b25fb536d5f8295ec3409d06a7c3104bc10b87c391c",
     "block": "4",
-    "itemTx": "0xcb5fabbd6e645516ebb97229bd92728a8cc5468182e9564c6ad17af9805fb449"
+    "itemTx": "0x9bef67d4153619c8f76df5039b3044cd08ec48393f29d906853efc797efea1e0"
   },
   "labShop": {
     "address": "0xdEC2963c504BAf888ED7A44312Cf5A7e11F7c2cd",
-    "hash": "0x63d7f6d3c30bf2ab266c87f28c6dcabeba8169886b41ef7ffa6e5d59118b0c41",
+    "hash": "0xb49dd33e763180722e7116c284c969cd301b0eacd9fcaf320276259667f0e87d",
     "block": "7"
   },
   "examples": {
-    "batchedCheckout": "0x81abc034321684f067cc11a03fe916e15360db4b02680300f43ac979b4178b21",
-    "redeem": "0x8eb340167fa9254c4a586baf4c4bed21fd23a44d8ee370d46b98896062536f4a",
-    "refund": "0xbc489ce1ce2af2128ee2ef5c27c58d03195901052c62e2297cfae9b947b229b7",
-    "withdraw": "0xf2543749f0402030bb5631e93cbfe7152049c9e715671e542da0a87441143fc9"
+    "batchedCheckout": "0x965d746d5714e5034526befa9e98adbd9c9d0edafe3f4aeec3e71f7a3adb7ce8",
+    "redeem": "0x8db3f3c5156a547b196ab7b279eae5ad26a46a3b9551c70b2e927dd4b36afd4c",
+    "refund": "0x52cb1e085870d1796ea8859091397994d1ee2dd598f1d632b5e0047c0cc2cb7b",
+    "withdraw": "0xe0d0ab9847d0753b7673b20058c61bbb9cf7d81fac9427f70eef119f06162e6c"
   }
 }

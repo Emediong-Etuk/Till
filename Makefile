@@ -65,7 +65,7 @@ e2e: fe-build
 	npx vitest run --config e2e/vitest.config.ts
 
 demo-chain:
-	@pkill -f "anvil .*--port $(ANVIL_PORT)" 2>/dev/null || true
+	@pkill -f "[a]nvil --hardfork osaka --port $(ANVIL_PORT)" 2>/dev/null || true
 	@(anvil $(ANVIL_FLAGS) > .anvil.log 2>&1 &) ; sleep 2
 	npx tsx scripts/deploy.ts --network local
 	npx tsx scripts/examples.ts --network local
