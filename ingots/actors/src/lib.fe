@@ -1,0 +1,9 @@
+//! Test-only actor contracts. `fe test` has no cheatcodes or pranks, so every
+//! distinct user, attacker, relay or receiver in a test is a contract.
+//!
+//! None of these are deployed outside tests and the local demo.
+pub use actor::{Actor, ActorMsg, Erc1271Msg, Erc721ReceiverMsg}
+pub use relay::{Relay, RelayMsg}
+pub use reentrant::{ReentrantReceiver, ReentrantMsg, Report}
+pub use force::{ForceSend, ForceMsg}
+pub use rejecting::{RejectingReceiver}

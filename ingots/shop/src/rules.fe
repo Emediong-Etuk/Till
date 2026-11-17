@@ -1,0 +1,95 @@
+//! Item rules as pure functions: no effects at all, so they are unit-tested
+//! in isolation and the handlers only apply their verdicts.
+use super::state::{ACTIVE, CANCELLED, Item, KIND_OTHER, PAUSED, RELEASED}
+
+pub const OK: u8 = 0
+pub const E_INACTIVE: u8 = 1
+pub const E_ZERO_QTY: u8 = 2
+pub const E_SOLD_OUT: u8 = 3
+pub const E_WALLET_CAP: u8 = 4
+pub const E_SUPPLY_BELOW_SOLD: u8 = 5
+pub const E_SHORTEN: u8 = 6
+pub const E_TOO_EARLY: u8 = 7
+pub const E_FINAL: u8 = 8
+pub const E_INVALID: u8 = 9
+
+/// Whether `qty` more passes of `it` may go to a wallet already holding
+/// `held` of them.
+pub fn check_purchase(it: Item, qty: u256, held: u256) -> u8 {
+    if it.status != ACTIVE {
+        return E_INACTIVE
+    }
+    if qty == 0 {
+        return E_ZERO_QTY
+    }
+    if qty > it.supply - it.sold {
+        return E_SOLD_OUT
+    }
+    if it.max_per_wallet != 0 && held + qty > it.max_per_wallet {
+        return E_WALLET_CAP
+    }
+    OK
+}
+
+/// A new item's parameters are sane.
+pub fn check_new(supply: u256, kind: u8) -> u8 {
+    if supply == 0 || kind > KIND_OTHER {
+        return E_INVALID
+    }
+    OK
+}
+
+/// An update may change price, supply and cap, but supply never drops below
+/// what was sold, and finished items cannot change (I9). Price changes never
+/// touch passes already paid for: each pass records its own price.
+pub fn check_update(it: Item, supply: u256) -> u8 {
+    if is_final(it.status) {
+        return E_FINAL
+    }
+    if supply < it.sold {
+        return E_SUPPLY_BELOW_SOLD
+    }
+    OK
+}
+
+/// The release time may only move later.
+pub fn check_extend(it: Item, release_at: Timestamp) -> u8 {
+    if is_final(it.status) {
+        return E_FINAL
+    }
+    if release_at < it.release_at {
+        return E_SHORTEN
+    }
+    OK
+}
+
+/// Escrow can be released to the seller once `release_at` has passed, if
+/// the item was not cancelled first.
+pub fn check_release(it: Item, now: Timestamp) -> u8 {
+    if is_final(it.status) {
+        return E_FINAL
+    }
+    if now < it.release_at {
+        return E_TOO_EARLY
+    }
+    OK
+}
+
+/// A pass is refundable only if its item was cancelled and the pass was not
+/// used at the door.
+pub fn can_refund(status: u8, redeemed: bool) -> bool {
+    status == CANCELLED && !redeemed
+}
+
+/// Cancelled and released are final: no further changes, no reactivation.
+pub fn is_final(_ status: u8) -> bool {
+    status == CANCELLED || status == RELEASED
+}
+
+pub fn can_pause(_ status: u8) -> bool {
+    status == ACTIVE
+}
+
+pub fn can_resume(_ status: u8) -> bool {
+    status == PAUSED
+}

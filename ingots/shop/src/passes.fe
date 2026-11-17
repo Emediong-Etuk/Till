@@ -1,0 +1,81 @@
+//! ERC-721 bookkeeping for passes. Like the sales logic, nothing here has a
+//! `Call` effect: transfers and burns never run foreign code. The receiver
+//! check of `safeTransferFrom` lives in the handler, after `forbid_in_batch`.
+use super::errors::{InvalidRecipient, NotAuthorized, UnknownPass, WrongFrom}
+use super::events::{Approval, ApprovalForAll, Transfer}
+use super::state::{Pass, Passes}
+
+pub const IERC165: u256 = 0x01ffc9a7
+pub const IERC721: u256 = 0x80ac58cd
+pub const IERC721_METADATA: u256 = 0x5b5e139f
+
+/// The pass, reverting `UnknownPass` if it was never minted or was burned.
+pub fn existing(_ id: u256) -> Pass uses (passes: Passes) {
+    let p = passes.passes[id]
+    if p.owner == Address::zero() {
+        revert_error(UnknownPass { pass: id })
+    }
+    p
+}
+
+/// Whether `spender` may move or refund pass `id` held by `holder`.
+pub fn is_authorized(spender: Address, holder: Address, id: u256) -> bool
+uses (passes: Passes)
+{
+    spender == holder || passes.approved[id] == spender || passes.operator[(holder, spender)]
+}
+
+pub fn approve(caller: Address, to: Address, id: u256)
+uses (passes: mut Passes, log: mut Log)
+{
+    let holder = existing(id).owner
+    if caller != holder && !passes.operator[(holder, caller)] {
+        revert_error(NotAuthorized { caller, pass: id })
+    }
+    passes.approved[id] = to
+    log.emit(Approval { owner: holder, approved: to, tokenId: id })
+}
+
+pub fn set_operator(caller: Address, operator: Address, approved: bool)
+uses (passes: mut Passes, log: mut Log)
+{
+    passes.operator[(caller, operator)] = approved
+    log.emit(ApprovalForAll { owner: caller, operator, approved })
+}
+
+/// Move pass `id` from `from` to `to` on behalf of `caller`. A redeemed
+/// pass may move, but stays redeemed.
+pub fn transfer(caller: Address, from: Address, to: Address, id: u256)
+uses (passes: mut Passes, log: mut Log)
+{
+    let p = existing(id)
+    if p.owner != from {
+        revert_error(WrongFrom { pass: id, owner: p.owner })
+    }
+    if to == Address::zero() {
+        revert_error(InvalidRecipient {})
+    }
+    if !is_authorized(spender: caller, holder: from, id) {
+        revert_error(NotAuthorized { caller, pass: id })
+    }
+    passes.approved[id] = Address::zero()
+    passes.balance_of[from] -= 1
+    passes.balance_of[to] += 1
+    passes.passes[id].owner = to
+    log.emit(Transfer { from, to, tokenId: id })
+}
+
+/// Destroy pass `id` (on refund).
+pub fn burn(_ id: u256) uses (passes: mut Passes, log: mut Log) {
+    let holder = existing(id).owner
+    passes.approved[id] = Address::zero()
+    passes.balance_of[holder] -= 1
+    passes.passes[id].owner = Address::zero()
+    log.emit(
+        Transfer { from: holder, to: Address::zero(), tokenId: id },
+    )
+}
+
+pub fn supports(_ interface_id: u256) -> bool {
+    interface_id == IERC165 || interface_id == IERC721 || interface_id == IERC721_METADATA
+}

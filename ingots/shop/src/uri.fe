@@ -1,0 +1,62 @@
+//! Strings for ERC-721 metadata: `name`, `symbol` from `bytes32` labels and
+//! `tokenURI` as `<base><shop address>/<pass id>`.
+use core::ptr::MemBuffer
+use std::abi::DynString
+
+/// Number of leading non-zero bytes of a left-aligned `bytes32` label.
+pub fn label_len(_ word: u256) -> u256 {
+    var n: u256 = 0
+    while n < 32 && (word >> (248 - n * 8)) & 0xff != 0 {
+        n += 1
+    }
+    n
+}
+
+pub fn label_string(_ word: u256) -> DynString {
+    DynString::from_word_prefix(word, len: label_len(word).downcast_unchecked())
+}
+
+fn push_word_prefix(_ buf: mut MemBuffer, word: u256, len: u256) {
+    var i: u256 = 0
+    while i < len {
+        buf.push(((word >> (248 - i * 8)) & 0xff).downcast_truncate())
+        i += 1
+    }
+}
+
+fn hex_digit(_ nibble: u256) -> u8 {
+    if nibble < 10 {
+        (48 + nibble).downcast_truncate()
+    } else {
+        (87 + nibble).downcast_truncate()
+    }
+}
+
+/// `<base><0x-address>/<decimal id>`, where `base` is up to 64 bytes held
+/// left-aligned in two words.
+pub fn token_uri(base0: u256, base1: u256, base_len: u256, shop: Address, id: u256) -> DynString {
+    var buf = MemBuffer::with_capacity(64 + 42 + 1 + 78)
+    let first = if base_len > 32 { 32 } else { base_len }
+    push_word_prefix(mut buf, word: base0, len: first)
+    if base_len > 32 {
+        push_word_prefix(mut buf, word: base1, len: base_len - 32)
+    }
+    buf.push(48)
+    buf.push(120)
+    var i: u256 = 0
+    while i < 40 {
+        buf.push(hex_digit((shop.word() >> ((39 - i) * 4)) & 0xf))
+        i += 1
+    }
+    buf.push(47)
+    // Decimal digits of id, most significant first.
+    var div: u256 = 1
+    while id / div >= 10 {
+        div = div * 10
+    }
+    while div > 0 {
+        buf.push((48 + (id / div) % 10).downcast_truncate())
+        div = div / 10
+    }
+    DynString::from_payload(source: buf.span())
+}

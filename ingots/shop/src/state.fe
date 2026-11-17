@@ -1,0 +1,100 @@
+//! The shop's storage, grouped into a few structs so each piece of business
+//! logic names exactly the state it touches in its `uses` clause.
+use std::abi::Bytes32
+use std::evm::StorageMap
+
+pub const ACTIVE: u8 = 1
+pub const PAUSED: u8 = 2
+pub const CANCELLED: u8 = 3
+pub const RELEASED: u8 = 4
+
+pub const KIND_TICKET: u8 = 0
+pub const KIND_MERCH: u8 = 1
+pub const KIND_OTHER: u8 = 2
+
+/// One thing for sale: a ticket tier, a T-shirt, anything else.
+pub struct Item {
+    pub price: Wei,
+    pub supply: u256,
+    pub sold: u256,
+    /// 0 means no per-wallet cap.
+    pub max_per_wallet: u256,
+    /// Escrow for this item is released to the seller after this time
+    /// unless the item is cancelled first.
+    pub release_at: Timestamp,
+    /// Buyer money for this item still held for refunds.
+    pub escrow: Wei,
+    pub status: u8,
+    pub kind: u8,
+    pub label: u256,
+}
+
+impl Copy for Item {}
+
+/// The ABI view of an item.
+#[abi]
+pub struct ItemView {
+    pub price: Wei,
+    pub supply: u256,
+    pub sold: u256,
+    pub max_per_wallet: u256,
+    pub release_at: Timestamp,
+    pub escrow: Wei,
+    pub status: u8,
+    pub kind: u8,
+    pub label: Bytes32,
+}
+
+pub fn view_of(_ it: Item) -> ItemView {
+    ItemView {
+        price: it.price,
+        supply: it.supply,
+        sold: it.sold,
+        max_per_wallet: it.max_per_wallet,
+        release_at: it.release_at,
+        escrow: it.escrow,
+        status: it.status,
+        kind: it.kind,
+        label: Bytes32 { val: it.label },
+    }
+}
+
+pub struct Catalog {
+    pub items: StorageMap<u256, Item>,
+    pub count: u256,
+    /// Passes bought per (item, recipient), for per-wallet caps.
+    pub bought: StorageMap<(u256, Address), u256>,
+}
+
+/// One pass: an ERC-721 token tied to the item it was bought for and the
+/// exact price paid, so a refund repays exactly that.
+pub struct Pass { pub owner: Address, pub redeemed: bool, pub item: u256, pub paid: Wei }
+
+impl Copy for Pass {}
+
+#[abi]
+pub struct PassView { pub item: u256, pub paid: Wei, pub redeemed: bool, pub owner: Address }
+
+pub struct Passes {
+    pub passes: StorageMap<u256, Pass>,
+    pub balance_of: StorageMap<Address, u256>,
+    pub approved: StorageMap<u256, Address>,
+    pub operator: StorageMap<(Address, Address), bool>,
+    /// Passes minted so far; pass ids start at 1.
+    pub minted: u256,
+}
+
+/// Money buckets. At all times
+/// `selfbalance >= total_escrow + seller_available` (I6); anything above is
+/// forced ETH that only `Sweep` can move.
+pub struct Books { pub total_escrow: Wei, pub seller_available: Wei, pub tips_total: Wei }
+
+#[abi]
+pub struct AccountingView {
+    pub total_escrow: Wei,
+    pub seller_available: Wei,
+    pub tips_total: Wei,
+    pub balance: Wei,
+}
+
+pub struct Ownership { pub owner: Address, pub pending: Address }

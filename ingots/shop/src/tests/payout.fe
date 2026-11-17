@@ -1,0 +1,379 @@
+// Release, withdraw, sweep and forced ETH (I6, I9, I10, I12).
+use std::abi::Bytes
+use std::evm::{Evm, ether, wei}
+use actors::{ForceMsg, ForceSend, ReentrantMsg, ReentrantReceiver, RejectingReceiver, Report}
+use ingot::{RELEASED, SaleMsg, SellerMsg, ViewMsg}
+use ingot::errors::{
+    InvalidRecipient,
+    ItemNotActive,
+    NotOwner,
+    NothingToWithdraw,
+    PayoutFailed,
+    TooEarly,
+}
+use ingot::testkit::{
+    GAS,
+    actor,
+    add_item,
+    assert_books_covered,
+    assert_books_exact,
+    assert_reverted_with,
+    books,
+    buy,
+    deploy_shop,
+    exec,
+    item_of,
+    ticket,
+    try_exec,
+    try_seller,
+}
+use till::entry
+
+const PAST: Timestamp = Timestamp::from_seconds(0)
+
+fn withdraw(_ shop: Address, to: Address) -> Wei uses (evm: mut Evm) {
+    evm.call(
+        addr: shop,
+        gas: GAS,
+        value: Wei::zero(),
+        message: SellerMsg::Withdraw { to },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn release_before_time_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = ticket(shop, price: wei(10), supply: 10)
+    let _ = buy(alice, shop, item, qty: 1, value: wei(10))
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::Release { item }),
+        TooEarly { item, release_at: Timestamp::from_seconds(1000) },
+    )
+    assert!(books(shop).seller_available == Wei::zero())
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn release_after_time_moves_escrow_to_seller() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = add_item(shop, price: wei(10), supply: 10, cap: 0, release_at: PAST)
+    let _ = buy(alice, shop, item, qty: 3, value: wei(30))
+    let released: Wei = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: SellerMsg::Release { item },
+        )
+    assert!(released == wei(30))
+    let it = item_of(shop, item)
+    assert!(it.status == RELEASED && it.escrow == Wei::zero())
+    let b = books(shop)
+    assert!(
+        b.total_escrow == Wei::zero() && b.seller_available == wei(30),
+    )
+    assert_books_exact(shop)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn release_at_exact_time_ok() uses (evm: mut Evm) {
+    // The harness clock reads 1.
+    let shop = deploy_shop(0)
+    let item = add_item(
+        shop,
+        price: wei(10),
+        supply: 10,
+        cap: 0,
+        release_at: Timestamp::from_seconds(1),
+    )
+    assert!(try_seller(shop, SellerMsg::Release { item }).success())
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn release_twice_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let item = add_item(shop, price: wei(10), supply: 10, cap: 0, release_at: PAST)
+    let _ = try_seller(shop, SellerMsg::Release { item })
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::Release { item }),
+        ItemNotActive { item, status: RELEASED },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn release_cancelled_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let item = add_item(shop, price: wei(10), supply: 10, cap: 0, release_at: PAST)
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::Release { item }),
+        ItemNotActive { item, status: ingot::CANCELLED },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn released_item_stops_selling() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = add_item(shop, price: wei(10), supply: 10, cap: 0, release_at: PAST)
+    let _ = try_seller(shop, SellerMsg::Release { item })
+    let out = ingot::testkit::try_buy(alice, shop, item, qty: 1, value: wei(10))
+    assert_reverted_with(out, ItemNotActive { item, status: RELEASED })
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn release_by_stranger_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let mallory = actor(3)
+    let item = add_item(shop, price: wei(10), supply: 10, cap: 0, release_at: PAST)
+    assert_reverted_with(
+        try_exec(
+            mallory,
+            target: shop,
+            value: Wei::zero(),
+            data: entry(SellerMsg::Release { item }),
+        ),
+        NotOwner { caller: mallory },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn withdraw_released_funds_and_tips() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let sink = actor(9)
+    let item = add_item(shop, price: wei(10), supply: 10, cap: 0, release_at: PAST)
+    let _ = buy(alice, shop, item, qty: 2, value: wei(20))
+    let _ = exec(
+        alice,
+        target: shop,
+        value: wei(5),
+        data: entry(SaleMsg::Tip { amount: wei(5) }),
+    )
+    let _ = try_seller(shop, SellerMsg::Release { item })
+    let before = evm.balance(sink)
+    assert!(withdraw(shop, to: sink) == wei(25))
+    assert!(evm.balance(sink) == before + wei(25))
+    assert!(evm.balance(shop) == Wei::zero())
+    assert_books_exact(shop)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn withdraw_never_touches_escrow() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let sink = actor(9)
+    let item = ticket(shop, price: wei(10), supply: 10)
+    let _ = buy(alice, shop, item, qty: 2, value: wei(20))
+    let _ = exec(
+        alice,
+        target: shop,
+        value: wei(5),
+        data: entry(SaleMsg::Tip { amount: wei(5) }),
+    )
+    assert!(withdraw(shop, to: sink) == wei(5))
+    assert!(evm.balance(shop) == wei(20))
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::Withdraw { to: sink }),
+        NothingToWithdraw {},
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn withdraw_nothing_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let sink = actor(9)
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::Withdraw { to: sink }),
+        NothingToWithdraw {},
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn withdraw_by_stranger_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let mallory = actor(3)
+    let _ = exec(
+        mallory,
+        target: shop,
+        value: wei(5),
+        data: entry(SaleMsg::Tip { amount: wei(5) }),
+    )
+    assert_reverted_with(
+        try_exec(
+            mallory,
+            target: shop,
+            value: Wei::zero(),
+            data: entry(SellerMsg::Withdraw { to: mallory }),
+        ),
+        NotOwner { caller: mallory },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn withdraw_to_zero_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::Withdraw { to: Address::zero() }),
+        InvalidRecipient {},
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn withdraw_to_rejecting_receiver_keeps_funds() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let rej = evm.create2<RejectingReceiver>(value: Wei::zero(), args: (), salt: 55)
+    let _ = exec(
+        alice,
+        target: shop,
+        value: wei(5),
+        data: entry(SaleMsg::Tip { amount: wei(5) }),
+    )
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::Withdraw { to: rej }),
+        PayoutFailed { to: rej, amount: wei(5) },
+    )
+    assert!(books(shop).seller_available == wei(5))
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn withdraw_to_reentrant_receiver_cannot_reenter() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let thief = evm.create2<ReentrantReceiver>(value: Wei::zero(), args: (), salt: 66)
+    let _ = exec(
+        alice,
+        target: shop,
+        value: wei(5),
+        data: entry(SaleMsg::Tip { amount: wei(5) }),
+    )
+    let _ = exec(
+        alice,
+        target: shop,
+        value: wei(6),
+        data: entry(SaleMsg::Tip { amount: wei(6) }),
+    )
+    evm.call(
+        addr: thief,
+        gas: GAS,
+        value: Wei::zero(),
+        message: ReentrantMsg::Arm {
+            target: shop,
+            value: Wei::zero(),
+            data: entry(SellerMsg::Withdraw { to: thief }),
+        },
+    )
+    assert!(withdraw(shop, to: thief) == wei(11))
+    let r: Report = evm
+        .call(
+            addr: thief,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ReentrantMsg::GetReport {},
+        )
+    assert!(r.attempts == 1 && r.successes == 0)
+    assert!(evm.balance(thief) == wei(11))
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn forced_eth_is_sweepable_and_never_breaks_books() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let sink = actor(9)
+    let item = ticket(shop, price: wei(10), supply: 10)
+    let _ = buy(alice, shop, item, qty: 1, value: wei(10))
+    let force = evm.create2<ForceSend>(value: Wei::zero(), args: (), salt: 88)
+    let ok: bool = evm
+        .call(
+            addr: force,
+            gas: GAS,
+            value: wei(777),
+            message: ForceMsg::Force { to: shop },
+        )
+    assert!(ok)
+    assert!(evm.balance(shop) == wei(787))
+    assert_books_covered(shop)
+    let swept: Wei = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: SellerMsg::Sweep { to: sink },
+        )
+    assert!(swept == wei(777))
+    assert_books_exact(shop)
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::Sweep { to: sink }),
+        NothingToWithdraw {},
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn eth_sent_before_deployment_is_sweepable() uses (evm: mut Evm) {
+    // A counterfactual shop address can receive ETH before it has code.
+    let predicted = std::evm::predict_create2<ingot::Shop>(
+        deployer: evm.address(),
+        args: (
+            evm.address(),
+            ingot::testkit::NAME,
+            ingot::testkit::SYMBOL,
+            ingot::testkit::URI0,
+            0,
+            ingot::testkit::URI_LEN,
+        ),
+        salt: 5,
+    )
+    let alice = actor(1)
+    let _ = exec(
+        alice,
+        target: predicted,
+        value: wei(42),
+        data: Bytes::empty(),
+    )
+    let shop = deploy_shop(5)
+    assert!(shop == predicted)
+    assert!(evm.balance(shop) == wei(42))
+    assert_books_covered(shop)
+    let sink = actor(9)
+    let swept: Wei = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: SellerMsg::Sweep { to: sink },
+        )
+    assert!(swept == wei(42))
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn sweep_by_stranger_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let mallory = actor(3)
+    assert_reverted_with(
+        try_exec(
+            mallory,
+            target: shop,
+            value: Wei::zero(),
+            data: entry(SellerMsg::Sweep { to: mallory }),
+        ),
+        NotOwner { caller: mallory },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn accounting_view_reports_balance() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = ticket(shop, price: ether(1), supply: 10)
+    let _ = buy(alice, shop, item, qty: 2, value: ether(2))
+    let b: ingot::AccountingView = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ViewMsg::Accounting {},
+        )
+    assert!(b.balance == ether(2) && b.total_escrow == ether(2))
+}

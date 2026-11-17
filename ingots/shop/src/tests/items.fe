@@ -1,0 +1,377 @@
+// Seller item management (I9, I12).
+use std::abi::{Bytes, DynArray, dyn_array_from}
+use std::evm::{Evm, ether, wei}
+use std::evm::multicall::MulticallMsg
+use ingot::{ACTIVE, CANCELLED, PAUSED, SellerMsg, ViewMsg}
+use ingot::errors::{
+    CannotShortenRelease,
+    InvalidItem,
+    ItemNotActive,
+    NotOwner,
+    SoldOut,
+    SupplyBelowSold,
+    UnknownItem,
+}
+use ingot::testkit::{
+    GAS,
+    actor,
+    add_item,
+    assert_reverted_with,
+    buy,
+    deploy_shop,
+    item_of,
+    label,
+    pass_of,
+    ticket,
+    try_buy,
+    try_exec,
+    try_seller,
+}
+use till::entry
+
+const T1000: Timestamp = Timestamp::from_seconds(1000)
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn add_item_direct() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let id = add_item(
+        shop,
+        price: ether(1),
+        supply: 50,
+        cap: 4,
+        release_at: T1000,
+    )
+    assert!(id == 0)
+    let it = item_of(shop, 0)
+    assert!(
+        it.price == ether(1) && it.supply == 50 && it.sold == 0 && it.max_per_wallet == 4,
+    )
+    assert!(
+        it.release_at == T1000 && it.status == ACTIVE && it.escrow == Wei::zero(),
+    )
+    let n: u256 = evm.call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ViewMsg::ItemCount {},
+        )
+    assert!(n == 1)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn add_three_items_in_one_zero_value_batch() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let data = dyn_array_from(
+        [
+            entry(
+                SellerMsg::AddItem {
+                    price: wei(1000),
+                    supply: 100,
+                    maxPerWallet: 4,
+                    releaseAt: T1000,
+                    kind: 0,
+                    label: label(0x47454e << 232),
+                },
+            ),
+            entry(
+                SellerMsg::AddItem {
+                    price: wei(3000),
+                    supply: 20,
+                    maxPerWallet: 2,
+                    releaseAt: T1000,
+                    kind: 0,
+                    label: label(0x564950 << 232),
+                },
+            ),
+            entry(
+                SellerMsg::AddItem {
+                    price: wei(1500),
+                    supply: 40,
+                    maxPerWallet: 0,
+                    releaseAt: T1000,
+                    kind: 1,
+                    label: label(0x5348495254 << 216),
+                },
+            ),
+        ],
+    )
+    let out: DynArray<Bytes> = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: MulticallMsg::Multicall { data },
+        )
+    assert!(out.len() == 3)
+    assert!(out.get(2).word_at(0) == 2)
+    assert!(item_of(shop, 1).price == wei(3000))
+    assert!(item_of(shop, 2).kind == 1)
+    assert!(item_of(shop, 2).label.val == 0x5348495254 << 216)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn add_item_by_stranger_reverts_not_owner() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let mallory = actor(3)
+    let out = try_exec(
+        mallory,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(
+            SellerMsg::AddItem {
+                price: wei(1),
+                supply: 1,
+                maxPerWallet: 0,
+                releaseAt: T1000,
+                kind: 0,
+                label: label(0),
+            },
+        ),
+    )
+    assert_reverted_with(out, NotOwner { caller: mallory })
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn add_item_zero_supply_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let out = try_seller(
+        shop,
+        SellerMsg::AddItem {
+            price: wei(1),
+            supply: 0,
+            maxPerWallet: 0,
+            releaseAt: T1000,
+            kind: 0,
+            label: label(0),
+        },
+    )
+    assert_reverted_with(out, InvalidItem {})
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn add_item_bad_kind_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let out = try_seller(
+        shop,
+        SellerMsg::AddItem {
+            price: wei(1),
+            supply: 1,
+            maxPerWallet: 0,
+            releaseAt: T1000,
+            kind: 3,
+            label: label(0),
+        },
+    )
+    assert_reverted_with(out, InvalidItem {})
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn add_item_rejects_value() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let out = with (std::evm::Call = evm) {
+        evm.try_call(
+            addr: shop,
+            gas: GAS,
+            value: wei(1),
+            message: SellerMsg::AddItem {
+                price: wei(1),
+                supply: 1,
+                maxPerWallet: 0,
+                releaseAt: T1000,
+                kind: 0,
+                label: label(0),
+            },
+        )
+    }
+    assert!(!out.success())
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn update_price_does_not_touch_paid_passes() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let pass = buy(alice, shop, item, qty: 1, value: wei(100))
+    let _ = try_seller(
+        shop,
+        SellerMsg::UpdateItem { item, price: wei(500), supply: 10, maxPerWallet: 0 },
+    )
+    assert!(item_of(shop, item).price == wei(500))
+    assert!(pass_of(shop, pass).paid == wei(100))
+    // New buyers pay the new price.
+    let _ = buy(alice, shop, item, qty: 1, value: wei(500))
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn update_supply_below_sold_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = ticket(shop, price: wei(1), supply: 10)
+    let _ = buy(alice, shop, item, qty: 3, value: wei(3))
+    let out = try_seller(
+        shop,
+        SellerMsg::UpdateItem { item, price: wei(1), supply: 2, maxPerWallet: 0 },
+    )
+    assert_reverted_with(out, SupplyBelowSold { item, sold: 3 })
+    // Exactly sold is fine: the item is then sold out.
+    assert!(
+        try_seller(
+            shop,
+            SellerMsg::UpdateItem { item, price: wei(1), supply: 3, maxPerWallet: 0 },
+        )
+            .success(),
+    )
+    assert_reverted_with(
+        try_buy(alice, shop, item, qty: 1, value: wei(1)),
+        SoldOut { item, remaining: 0 },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn update_by_stranger_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let mallory = actor(3)
+    let item = ticket(shop, price: wei(1), supply: 10)
+    let out = try_exec(
+        mallory,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(
+            SellerMsg::UpdateItem { item, price: wei(0), supply: 10, maxPerWallet: 0 },
+        ),
+    )
+    assert_reverted_with(out, NotOwner { caller: mallory })
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn update_unknown_item_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    assert_reverted_with(
+        try_seller(
+            shop,
+            SellerMsg::UpdateItem { item: 9, price: wei(1), supply: 1, maxPerWallet: 0 },
+        ),
+        UnknownItem { item: 9 },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn pause_blocks_sales_and_resume_restores() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = ticket(shop, price: wei(5), supply: 10)
+    assert!(try_seller(shop, SellerMsg::Pause { item }).success())
+    assert!(item_of(shop, item).status == PAUSED)
+    assert_reverted_with(
+        try_buy(alice, shop, item, qty: 1, value: wei(5)),
+        ItemNotActive { item, status: PAUSED },
+    )
+    assert!(try_seller(shop, SellerMsg::Resume { item }).success())
+    let _ = buy(alice, shop, item, qty: 1, value: wei(5))
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn resume_active_item_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let item = ticket(shop, price: wei(5), supply: 10)
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::Resume { item }),
+        ItemNotActive { item, status: ACTIVE },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn cancel_is_final() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let alice = actor(1)
+    let item = ticket(shop, price: wei(5), supply: 10)
+    assert!(try_seller(shop, SellerMsg::Cancel { item }).success())
+    assert!(item_of(shop, item).status == CANCELLED)
+    // No reactivation, no second cancel, no updates, no sales.
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::Resume { item }),
+        ItemNotActive { item, status: CANCELLED },
+    )
+    assert_reverted_with(
+        try_seller(shop, SellerMsg::Cancel { item }),
+        ItemNotActive { item, status: CANCELLED },
+    )
+    assert_reverted_with(
+        try_seller(
+            shop,
+            SellerMsg::UpdateItem { item, price: wei(1), supply: 10, maxPerWallet: 0 },
+        ),
+        ItemNotActive { item, status: CANCELLED },
+    )
+    assert_reverted_with(
+        try_buy(alice, shop, item, qty: 1, value: wei(5)),
+        ItemNotActive { item, status: CANCELLED },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn cancel_paused_item_ok() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let item = ticket(shop, price: wei(5), supply: 10)
+    assert!(try_seller(shop, SellerMsg::Pause { item }).success())
+    assert!(try_seller(shop, SellerMsg::Cancel { item }).success())
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn extend_release_only_later() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let item = ticket(shop, price: wei(5), supply: 10)
+    assert!(
+        try_seller(
+            shop,
+            SellerMsg::ExtendRelease { item, releaseAt: Timestamp::from_seconds(5000) },
+        )
+            .success(),
+    )
+    assert!(
+        item_of(shop, item).release_at == Timestamp::from_seconds(5000),
+    )
+    assert_reverted_with(
+        try_seller(
+            shop,
+            SellerMsg::ExtendRelease { item, releaseAt: Timestamp::from_seconds(4999) },
+        ),
+        CannotShortenRelease { item, release_at: Timestamp::from_seconds(5000) },
+    )
+    // Same time is allowed (a no-op).
+    assert!(
+        try_seller(
+            shop,
+            SellerMsg::ExtendRelease { item, releaseAt: Timestamp::from_seconds(5000) },
+        )
+            .success(),
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn extend_release_of_cancelled_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let item = ticket(shop, price: wei(5), supply: 10)
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    assert_reverted_with(
+        try_seller(
+            shop,
+            SellerMsg::ExtendRelease { item, releaseAt: Timestamp::from_seconds(9000) },
+        ),
+        ItemNotActive { item, status: CANCELLED },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn item_of_unknown_reverts() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let out = with (std::evm::Call = evm) {
+        evm.try_call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ViewMsg::ItemOf { item: 0 },
+        )
+    }
+    assert_reverted_with(out, UnknownItem { item: 0 })
+}

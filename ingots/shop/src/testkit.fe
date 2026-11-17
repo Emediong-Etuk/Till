@@ -1,0 +1,232 @@
+//! Helpers for the shop's Fe tests. Nothing here is reachable from the
+//! deployed contracts; it is a module so every test file can share it.
+//!
+//! Conventions: the test contract itself (`evm.address()`) is the seller and
+//! owns the shop. Buyers and attackers are `Actor` contracts, so each has its
+//! own address and calls the shop through `Actor::Exec`.
+use core::abi::Encode
+use core::error::ErrorVariant
+use core::message::MsgVariant
+use std::abi::{Bytes, Bytes32, Sol}
+use std::evm::{Call, CallOutcome, Evm, encode_error, ether, has_selector}
+use actors::{Actor, ActorMsg}
+use till::{TillState, entry}
+use super::shop::Shop
+use super::msgs::{Erc721Msg, SaleMsg, SellerMsg, ViewMsg}
+use super::state::{AccountingView, ItemView, PassView, KIND_TICKET}
+
+pub const GAS: u256 = 30000000
+
+/// "http://localhost:3000/api/pass/" left-aligned, 31 bytes.
+pub const URI0: u256 = 0x687474703a2f2f6c6f63616c686f73743a333030302f6170692f706173732f00
+pub const URI_LEN: u256 = 31
+/// "Uyo Dev Meetup" and "UYO".
+pub const NAME: u256 = 0x55796f20446576204d6565747570000000000000000000000000000000000000
+pub const SYMBOL: u256 = 0x55594f0000000000000000000000000000000000000000000000000000000000
+
+pub fn deploy_shop(_ salt: u256) -> Address uses (evm: mut Evm) {
+    evm.create2<Shop>(
+        value: Wei::zero(),
+        args: (evm.address(), NAME, SYMBOL, URI0, 0, URI_LEN),
+        salt,
+    )
+}
+
+pub fn actor(_ salt: u256) -> Address uses (evm: mut Evm) {
+    evm.create2<Actor>(value: ether(100), args: (), salt: 1000 + salt)
+}
+
+pub fn label(_ word: u256) -> Bytes32 {
+    Bytes32 { val: word }
+}
+
+/// Add an item as the seller (the test contract).
+pub fn add_item(_ shop: Address, price: Wei, supply: u256, cap: u256, release_at: Timestamp) -> u256
+uses (evm: mut Evm)
+{
+    evm.call(
+        addr: shop,
+        gas: GAS,
+        value: Wei::zero(),
+        message: SellerMsg::AddItem {
+            price,
+            supply,
+            maxPerWallet: cap,
+            releaseAt: release_at,
+            kind: KIND_TICKET,
+            label: label(0x5449434b4554 << 208),
+        },
+    )
+}
+
+/// An unlimited ticket that releases at t = 1000 (the harness clock is 1).
+pub fn ticket(_ shop: Address, price: Wei, supply: u256) -> u256
+uses (evm: mut Evm)
+{
+    add_item(
+        shop,
+        price,
+        supply,
+        cap: 0,
+        release_at: Timestamp::from_seconds(1000),
+    )
+}
+
+/// `who` calls `target` with `value` and `data`; reverts bubble.
+pub fn exec(_ who: Address, target: Address, value: Wei, data: own Bytes) -> Bytes
+uses (evm: mut Evm)
+{
+    evm.call(
+        addr: who,
+        gas: GAS,
+        value: Wei::zero(),
+        message: ActorMsg::Exec { target, value, data },
+    )
+}
+
+pub fn try_exec(_ who: Address, target: Address, value: Wei, data: own Bytes) -> CallOutcome
+uses (evm: mut Evm)
+{
+    with (Call = evm) {
+        evm.try_call(
+            addr: who,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ActorMsg::Exec { target, value, data },
+        )
+    }
+}
+
+/// `who` buys `qty` of `item` paying `value`; returns the first pass id.
+pub fn buy(_ who: Address, _ shop: Address, item: u256, qty: u256, value: Wei) -> u256
+uses (evm: mut Evm)
+{
+    exec(
+        who,
+        target: shop,
+        value,
+        data: entry(SaleMsg::Buy { item, qty }),
+    ).word_at(0)
+}
+
+pub fn try_buy(_ who: Address, _ shop: Address, item: u256, qty: u256, value: Wei) -> CallOutcome
+uses (evm: mut Evm)
+{
+    try_exec(
+        who,
+        target: shop,
+        value,
+        data: entry(SaleMsg::Buy { item, qty }),
+    )
+}
+
+pub fn try_seller<M>(_ shop: Address, _ message: own M) -> CallOutcome
+uses (evm: mut Evm)
+where M: MsgVariant<Sol> + Encode<Sol>
+{
+    with (Call = evm) {
+        evm.try_call(addr: shop, gas: GAS, value: Wei::zero(), message)
+    }
+}
+
+pub fn item_of(_ shop: Address, _ item: u256) -> ItemView uses (evm: mut Evm) {
+    evm.call(
+        addr: shop,
+        gas: GAS,
+        value: Wei::zero(),
+        message: ViewMsg::ItemOf { item },
+    )
+}
+
+pub fn pass_of(_ shop: Address, _ pass: u256) -> PassView uses (evm: mut Evm) {
+    evm.call(
+        addr: shop,
+        gas: GAS,
+        value: Wei::zero(),
+        message: ViewMsg::PassOf { pass },
+    )
+}
+
+pub fn books(_ shop: Address) -> AccountingView uses (evm: mut Evm) {
+    evm.call(
+        addr: shop,
+        gas: GAS,
+        value: Wei::zero(),
+        message: ViewMsg::Accounting {},
+    )
+}
+
+pub fn till_state(_ shop: Address) -> TillState uses (evm: mut Evm) {
+    evm.call(
+        addr: shop,
+        gas: GAS,
+        value: Wei::zero(),
+        message: ViewMsg::State {},
+    )
+}
+
+pub fn owner_of(_ shop: Address, _ id: u256) -> Address uses (evm: mut Evm) {
+    evm.call(
+        addr: shop,
+        gas: GAS,
+        value: Wei::zero(),
+        message: Erc721Msg::OwnerOf { tokenId: id },
+    )
+}
+
+pub fn balance_of(_ shop: Address, _ who: Address) -> u256 uses (evm: mut Evm) {
+    evm.call(
+        addr: shop,
+        gas: GAS,
+        value: Wei::zero(),
+        message: Erc721Msg::BalanceOf { owner: who },
+    )
+}
+
+/// I3: the till is clean between frames.
+pub fn assert_till_clean(_ shop: Address) uses (evm: mut Evm) {
+    let s = till_state(shop)
+    assert!(s.left == Wei::zero() && !s.batching && s.entries == 0)
+}
+
+/// I6 with no forced ETH: the balance is exactly escrow plus seller funds.
+pub fn assert_books_exact(_ shop: Address) uses (evm: mut Evm) {
+    let b = books(shop)
+    assert!(b.balance == b.total_escrow + b.seller_available)
+    assert!(b.balance == evm.balance(shop))
+}
+
+/// I6 in general: the balance covers every bucket.
+pub fn assert_books_covered(_ shop: Address) uses (evm: mut Evm) {
+    let b = books(shop)
+    assert!(b.balance >= b.total_escrow + b.seller_available)
+}
+
+pub fn assert_reverted_with<E>(_ out: own CallOutcome, _ error: own E)
+where E: ErrorVariant<Sol> + Encode<Sol>
+{
+    assert!(!out.success())
+    let expected = encode_error(error)
+    assert!(
+        Bytes::from_payload(source: out.returndata())
+            == Bytes::from_payload(source: expected.span()),
+    )
+}
+
+pub fn assert_selector<E>(_ out: own CallOutcome) where E: ErrorVariant<Sol> {
+    assert!(!out.success())
+    assert!(has_selector<E>(out.returndata()))
+}
+
+/// The first `len` bytes of `words` as `Bytes` (signature vectors).
+pub fn bytes_of<const N: usize>(_ words: [u256; N], len: usize) -> Bytes {
+    var buf = core::ptr::MemBuffer::with_capacity(len)
+    var i: usize = 0
+    while i < len {
+        let w = words[i / 32]
+        let shift = (248 - (i % 32) * 8) as u256
+        buf.push(((w >> shift) & 0xff).downcast_truncate())
+        i += 1
+    }
+    Bytes::from_payload(source: buf.span())
+}

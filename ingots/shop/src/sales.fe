@@ -1,0 +1,92 @@
+//! Buyer-side business logic. Every function here is effect-typed WITHOUT
+//! `Ctx` and WITHOUT `Call`:
+//!
+//! - no `Ctx`: it cannot read `msg.value`, so it cannot count a payment
+//!   twice; the only way to get paid is `register.take`.
+//! - no `Call`: it cannot run foreign code mid-batch, so nothing can
+//!   re-enter while a batch budget is live.
+//!
+//! Both are checked by the compiler: calling anything that needs `Ctx` or
+//! `Call` from here is a `missing effect` error, not a code-review finding.
+use till::{Till, charge}
+use super::errors::{
+    InvalidRecipient,
+    ItemNotActive,
+    SoldOut,
+    UnknownItem,
+    WalletCapExceeded,
+    ZeroAmount,
+    ZeroQuantity,
+}
+use super::events::{Noted, Purchased, Tipped, Transfer}
+use super::rules::{E_INACTIVE, E_SOLD_OUT, E_WALLET_CAP, E_ZERO_QTY, OK, check_purchase}
+use super::state::{Books, Catalog, Pass, Passes}
+
+/// Sell `qty` passes of `item` to `to`, paid by `buyer` from the till.
+/// Mints the passes without receiver callbacks (no foreign code, I4) and
+/// moves the price into the item's escrow. Returns the first pass id.
+pub fn purchase(item: u256, qty: u256, to: Address, buyer: Address) -> u256
+uses (register: mut Till, catalog: mut Catalog, passes: mut Passes, books: mut Books, log: mut Log)
+{
+    if item >= catalog.count {
+        revert_error(UnknownItem { item })
+    }
+    if to == Address::zero() {
+        revert_error(InvalidRecipient {})
+    }
+    let it = catalog.items[item]
+    let held = catalog.bought[(item, to)]
+    let verdict = check_purchase(it, qty, held)
+    if verdict != OK {
+        if verdict == E_INACTIVE {
+            revert_error(ItemNotActive { item, status: it.status })
+        } else if verdict == E_ZERO_QTY {
+            revert_error(ZeroQuantity {})
+        } else if verdict == E_SOLD_OUT {
+            revert_error(SoldOut { item, remaining: it.supply - it.sold })
+        } else {
+            revert_error(WalletCapExceeded { item, cap: it.max_per_wallet, held })
+        }
+    }
+
+    let paid = charge(price: it.price, qty)
+
+    catalog.items[item].sold = it.sold + qty
+    catalog.items[item].escrow = it.escrow + paid
+    catalog.bought[(item, to)] = held + qty
+    books.total_escrow += paid
+
+    let first = passes.minted + 1
+    var id = first
+    while id < first + qty {
+        passes.passes[id] = Pass { owner: to, redeemed: false, item, paid: it.price }
+        log.emit(Transfer { from: Address::zero(), to, tokenId: id })
+        id += 1
+    }
+    passes.minted += qty
+    passes.balance_of[to] += qty
+
+    log.emit(
+        Purchased { buyer, to, item, qty, first_pass: first, paid },
+    )
+    first
+}
+
+/// A tip goes straight to the seller's withdrawable balance.
+pub fn tip(amount: Wei, from: Address)
+uses (register: mut Till, books: mut Books, log: mut Log)
+{
+    if amount == Wei::zero() {
+        revert_error(ZeroAmount {})
+    }
+    register.take(amount)
+    books.seller_available += amount
+    books.tips_total += amount
+    log.emit(Tipped { from, amount })
+}
+
+/// A note costs nothing. It exists so non-paying entries can join paid
+/// batches without making them non-payable.
+pub fn note(text: u256, from: Address) uses (log: mut Log) {
+    log.emit(Noted { from, text })
+}

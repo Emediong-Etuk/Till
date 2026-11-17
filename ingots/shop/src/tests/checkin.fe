@@ -1,0 +1,633 @@
+// EIP-712 check-in (I8) against viem-generated vectors (src/vectors.fe).
+use core::option::Option
+use std::abi::{Bytes, Bytes32, DynArray, dyn_array_from}
+use std::evm::{Evm, signature, wei}
+use std::evm::multicall::MulticallMsg
+use actors::ActorMsg
+use ingot::{Erc721Msg, RefundMsg, SaleMsg, SellerMsg, ViewMsg}
+use ingot::checkin::{CHECKIN_TYPEHASH, checkin_digest, checkin_struct_hash}
+use ingot::errors::{
+    AlreadyRedeemed,
+    BadSignature,
+    ItemNotActive,
+    NotOwner,
+    NotRefundable,
+    SignatureExpired,
+    UnknownPass,
+}
+use ingot::testkit::{
+    GAS,
+    actor,
+    add_item,
+    assert_books_exact,
+    assert_reverted_with,
+    books,
+    bytes_of,
+    deploy_shop,
+    exec,
+    item_of,
+    pass_of,
+    ticket,
+    try_exec,
+    try_seller,
+}
+use ingot::vectors::*
+use till::entry
+
+const DL: Timestamp = Timestamp::from_seconds(DEADLINE)
+
+fn signer0() -> Address {
+    Address::new(SIGNER0)
+}
+
+/// The vector shop with two passes (1, 2) held by the EOA SIGNER0.
+fn setup() -> (Address, u256) uses (evm: mut Evm) {
+    let shop = deploy_shop(VECTOR_SALT)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let alice = actor(1)
+    let _ = exec(
+        alice,
+        target: shop,
+        value: wei(200),
+        data: entry(SaleMsg::BuyFor { item, qty: 2, to: signer0() }),
+    )
+    (shop, item)
+}
+
+fn redeem(_ shop: Address, pass: u256, deadline: Timestamp, sig: own Bytes) -> std::evm::CallOutcome
+uses (evm: mut Evm)
+{
+    try_seller(shop, SellerMsg::Redeem { pass, deadline, sig })
+}
+
+// --- pure vectors -----------------------------------------------------------
+
+#[test]
+fn typehash_matches_type_string() {
+    // cast keccak "CheckIn(address shop,uint256 pass,uint256 deadline)"
+    assert!(
+        CHECKIN_TYPEHASH == core::keccak("CheckIn(address shop,uint256 pass,uint256 deadline)"),
+    )
+}
+
+#[test]
+fn digest_matches_viem_chain_1() {
+    assert!(
+        checkin_digest(
+                chain_id: 1,
+                shop: Address::new(FIXED_SHOP),
+                pass: 7,
+                deadline: DL,
+            )
+            == PURE_DIGEST_CHAIN1,
+    )
+}
+
+#[test]
+fn digest_matches_viem_sepolia() {
+    assert!(
+        checkin_digest(
+                chain_id: 11155111,
+                shop: Address::new(FIXED_SHOP),
+                pass: 7,
+                deadline: DL,
+            )
+            == PURE_DIGEST_SEPOLIA,
+    )
+}
+
+#[test]
+fn digest_matches_viem_anvil() {
+    assert!(
+        checkin_digest(
+                chain_id: 31337,
+                shop: Address::new(FIXED_SHOP),
+                pass: 7,
+                deadline: DL,
+            )
+            == PURE_DIGEST_LOCAL,
+    )
+}
+
+#[test]
+fn digest_depends_on_every_field() {
+    let base = checkin_digest(
+        chain_id: 1,
+        shop: Address::new(FIXED_SHOP),
+        pass: 7,
+        deadline: DL,
+    )
+    assert!(
+        checkin_digest(
+                chain_id: 2,
+                shop: Address::new(FIXED_SHOP),
+                pass: 7,
+                deadline: DL,
+            ) != base,
+    )
+    assert!(
+        checkin_digest(
+                chain_id: 1,
+                shop: Address::new(FIXED_SHOP + 1),
+                pass: 7,
+                deadline: DL,
+            )
+            != base,
+    )
+    assert!(
+        checkin_digest(
+                chain_id: 1,
+                shop: Address::new(FIXED_SHOP),
+                pass: 8,
+                deadline: DL,
+            ) != base,
+    )
+    assert!(
+        checkin_digest(
+                chain_id: 1,
+                shop: Address::new(FIXED_SHOP),
+                pass: 7,
+                deadline: Timestamp::from_seconds(DEADLINE + 1),
+            )
+            != base,
+    )
+    assert!(
+        checkin_struct_hash(shop: Address::new(FIXED_SHOP), pass: 7, deadline: DL) != base,
+    )
+}
+
+#[test]
+fn recover_65_byte_vector() {
+    let sig = bytes_of(PURE_SIG, len: PURE_SIG_LEN)
+    match signature::recover(digest: PURE_DIGEST_CHAIN1, sig.span()) {
+        Option::Some(a) => assert!(a == signer0()),
+        Option::None => assert!(false),
+    }
+}
+
+#[test]
+fn recover_64_byte_compact_vector() {
+    let sig = bytes_of(PURE_COMPACT, len: PURE_COMPACT_LEN)
+    match signature::recover(digest: PURE_DIGEST_CHAIN1, sig.span()) {
+        Option::Some(a) => assert!(a == signer0()),
+        Option::None => assert!(false),
+    }
+}
+
+#[test]
+fn recover_rejects_high_s_twin() {
+    let sig = bytes_of(PURE_HIGH_S, len: PURE_HIGH_S_LEN)
+    match signature::recover(digest: PURE_DIGEST_CHAIN1, sig.span()) {
+        Option::Some(_) => assert!(false),
+        Option::None => {},
+    }
+    // The raw precompile would accept it: that is why canonical recovery is used.
+    match signature::recover_raw(digest: PURE_DIGEST_CHAIN1, sig.span()) {
+        Option::Some(a) => assert!(a == signer0()),
+        Option::None => assert!(false),
+    }
+}
+
+#[test]
+fn recover_other_key_vector() {
+    let sig = bytes_of(PURE_SIG_OTHER, len: PURE_SIG_OTHER_LEN)
+    match signature::recover(digest: PURE_DIGEST_CHAIN1, sig.span()) {
+        Option::Some(a) => assert!(a == Address::new(SIGNER1)),
+        Option::None => assert!(false),
+    }
+}
+
+// --- deployed shop ----------------------------------------------------------
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn vector_shop_address_matches_offchain_create2() uses (evm: mut Evm) {
+    // The address viem derived from out/Shop.bin is the one the test deploys.
+    assert!(deploy_shop(VECTOR_SALT) == Address::new(VECTOR_SHOP))
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn checkin_digest_view_matches_viem() uses (evm: mut Evm) {
+    let (shop, _) = setup()
+    let d1: Bytes32 = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ViewMsg::CheckInDigest { pass: 1, deadline: DL },
+        )
+    let d2: Bytes32 = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ViewMsg::CheckInDigest { pass: 2, deadline: DL },
+        )
+    assert!(d1.val == P1_DIGEST && d2.val == P2_DIGEST)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_with_eoa_signature_releases_that_pass() uses (evm: mut Evm) {
+    let (shop, item) = setup()
+    let out = redeem(
+        shop,
+        pass: 1,
+        deadline: DL,
+        sig: bytes_of(P1_SIG, len: P1_SIG_LEN),
+    )
+    assert!(out.success())
+    assert!(pass_of(shop, 1).redeemed && !pass_of(shop, 2).redeemed)
+    assert!(item_of(shop, item).escrow == wei(100))
+    let b = books(shop)
+    assert!(
+        b.total_escrow == wei(100) && b.seller_available == wei(100),
+    )
+    assert_books_exact(shop)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_with_compact_signature() uses (evm: mut Evm) {
+    let (shop, _) = setup()
+    assert!(
+        redeem(
+            shop,
+            pass: 2,
+            deadline: DL,
+            sig: bytes_of(P2_COMPACT, len: P2_COMPACT_LEN),
+        )
+            .success(),
+    )
+    assert!(pass_of(shop, 2).redeemed)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_twice_reverts() uses (evm: mut Evm) {
+    let (shop, _) = setup()
+    assert!(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: DL,
+            sig: bytes_of(P1_SIG, len: P1_SIG_LEN),
+        ).success(),
+    )
+    assert_reverted_with(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: DL,
+            sig: bytes_of(P1_SIG, len: P1_SIG_LEN),
+        ),
+        AlreadyRedeemed { pass: 1 },
+    )
+    // The other encoding of the same signature does not help either.
+    assert_reverted_with(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: DL,
+            sig: bytes_of(P1_COMPACT, len: P1_COMPACT_LEN),
+        ),
+        AlreadyRedeemed { pass: 1 },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_expired_reverts() uses (evm: mut Evm) {
+    let (shop, _) = setup()
+    let zero = Timestamp::from_seconds(0)
+    assert_reverted_with(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: zero,
+            sig: bytes_of(P1_EXPIRED, len: P1_EXPIRED_LEN),
+        ),
+        SignatureExpired { deadline: zero },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_wrong_signer_reverts() uses (evm: mut Evm) {
+    // E.g. the seller signing for the holder.
+    let (shop, _) = setup()
+    assert_reverted_with(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: DL,
+            sig: bytes_of(P1_BY_OTHER, len: P1_BY_OTHER_LEN),
+        ),
+        BadSignature { holder: signer0() },
+    )
+    assert!(!pass_of(shop, 1).redeemed)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_other_shop_signature_reverts() uses (evm: mut Evm) {
+    let (shop, _) = setup()
+    assert_reverted_with(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: DL,
+            sig: bytes_of(P1_OTHER_SHOP, len: P1_OTHER_SHOP_LEN),
+        ),
+        BadSignature { holder: signer0() },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_other_chain_signature_reverts() uses (evm: mut Evm) {
+    let (shop, _) = setup()
+    assert_reverted_with(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: DL,
+            sig: bytes_of(P1_OTHER_CHAIN, len: P1_OTHER_CHAIN_LEN),
+        ),
+        BadSignature { holder: signer0() },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_high_s_signature_reverts() uses (evm: mut Evm) {
+    let (shop, _) = setup()
+    assert_reverted_with(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: DL,
+            sig: bytes_of(P1_HIGH_S, len: P1_HIGH_S_LEN),
+        ),
+        BadSignature { holder: signer0() },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_signature_for_other_pass_reverts() uses (evm: mut Evm) {
+    let (shop, _) = setup()
+    assert_reverted_with(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: DL,
+            sig: bytes_of(P2_SIG, len: P2_SIG_LEN),
+        ),
+        BadSignature { holder: signer0() },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_signature_for_other_deadline_reverts() uses (evm: mut Evm) {
+    let (shop, _) = setup()
+    assert_reverted_with(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: DL,
+            sig: bytes_of(P1_LATER, len: P1_LATER_LEN),
+        ),
+        BadSignature { holder: signer0() },
+    )
+    assert!(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: Timestamp::from_seconds(DEADLINE_LATER),
+            sig: bytes_of(P1_LATER, len: P1_LATER_LEN),
+        )
+            .success(),
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_garbage_signature_reverts() uses (evm: mut Evm) {
+    let (shop, _) = setup()
+    assert_reverted_with(
+        redeem(shop, pass: 1, deadline: DL, sig: Bytes::empty()),
+        BadSignature { holder: signer0() },
+    )
+    assert_reverted_with(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: DL,
+            sig: bytes_of([0, 0, 0], len: 65),
+        ),
+        BadSignature { holder: signer0() },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_by_stranger_reverts() uses (evm: mut Evm) {
+    let (shop, _) = setup()
+    let mallory = actor(3)
+    let out = try_exec(
+        mallory,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(
+            SellerMsg::Redeem { pass: 1, deadline: DL, sig: bytes_of(P1_SIG, len: P1_SIG_LEN) },
+        ),
+    )
+    assert_reverted_with(out, NotOwner { caller: mallory })
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_unknown_pass_reverts() uses (evm: mut Evm) {
+    let (shop, _) = setup()
+    assert_reverted_with(
+        redeem(
+            shop,
+            pass: 99,
+            deadline: DL,
+            sig: bytes_of(P1_SIG, len: P1_SIG_LEN),
+        ),
+        UnknownPass { pass: 99 },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_cancelled_item_reverts() uses (evm: mut Evm) {
+    let (shop, item) = setup()
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    assert_reverted_with(
+        redeem(
+            shop,
+            pass: 1,
+            deadline: DL,
+            sig: bytes_of(P1_SIG, len: P1_SIG_LEN),
+        ),
+        ItemNotActive { item, status: ingot::CANCELLED },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn door_batch_redeems_a_queue() uses (evm: mut Evm) {
+    let (shop, item) = setup()
+    let data = dyn_array_from(
+        [
+            entry(
+                SellerMsg::Redeem { pass: 1, deadline: DL, sig: bytes_of(P1_SIG, len: P1_SIG_LEN) },
+            ),
+            entry(
+                SellerMsg::Redeem { pass: 2, deadline: DL, sig: bytes_of(P2_SIG, len: P2_SIG_LEN) },
+            ),
+        ],
+    )
+    let _: DynArray<Bytes> = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: MulticallMsg::Multicall { data },
+        )
+    assert!(pass_of(shop, 1).redeemed && pass_of(shop, 2).redeemed)
+    assert!(item_of(shop, item).escrow == Wei::zero())
+    assert!(books(shop).seller_available == wei(200))
+}
+
+// --- ERC-1271 holders ---------------------------------------------------------
+
+/// A contract holder (Actor) with one pass of a fresh shop.
+fn contract_holder_setup() -> (Address, Address, u256, u256)
+uses (evm: mut Evm)
+{
+    let shop = deploy_shop(0)
+    let item = ticket(shop, price: wei(100), supply: 10)
+    let holder = actor(7)
+    let pass = ingot::testkit::buy(holder, shop, item, qty: 1, value: wei(100))
+    (shop, holder, item, pass)
+}
+
+fn approve_digest(_ holder: Address, _ shop: Address, pass: u256)
+uses (evm: mut Evm)
+{
+    let d: Bytes32 = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: ViewMsg::CheckInDigest { pass, deadline: DL },
+        )
+    evm.call(
+        addr: holder,
+        gas: GAS,
+        value: Wei::zero(),
+        message: ActorMsg::Approve { digest: d },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_erc1271_holder() uses (evm: mut Evm) {
+    let (shop, holder, _, pass) = contract_holder_setup()
+    approve_digest(holder, shop, pass)
+    assert!(
+        redeem(shop, pass, deadline: DL, sig: Bytes::empty()).success(),
+    )
+    assert!(pass_of(shop, pass).redeemed)
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_erc1271_without_approval_reverts() uses (evm: mut Evm) {
+    let (shop, holder, _, pass) = contract_holder_setup()
+    assert_reverted_with(
+        redeem(shop, pass, deadline: DL, sig: Bytes::empty()),
+        BadSignature { holder },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn previous_holder_signature_dies_on_transfer() uses (evm: mut Evm) {
+    let (shop, holder, _, pass) = contract_holder_setup()
+    approve_digest(holder, shop, pass)
+    let bob = actor(2)
+    let _ = exec(
+        holder,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(
+            Erc721Msg::TransferFrom { from: holder, to: bob, tokenId: pass },
+        ),
+    )
+    assert_reverted_with(
+        redeem(shop, pass, deadline: DL, sig: Bytes::empty()),
+        BadSignature { holder: bob },
+    )
+    approve_digest(bob, shop, pass)
+    assert!(
+        redeem(shop, pass, deadline: DL, sig: Bytes::empty()).success(),
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeemed_pass_stays_redeemed_after_transfer() uses (evm: mut Evm) {
+    let (shop, holder, _, pass) = contract_holder_setup()
+    approve_digest(holder, shop, pass)
+    assert!(
+        redeem(shop, pass, deadline: DL, sig: Bytes::empty()).success(),
+    )
+    let bob = actor(2)
+    let _ = exec(
+        holder,
+        target: shop,
+        value: Wei::zero(),
+        data: entry(
+            Erc721Msg::TransferFrom { from: holder, to: bob, tokenId: pass },
+        ),
+    )
+    assert!(
+        pass_of(shop, pass).redeemed && pass_of(shop, pass).owner == bob,
+    )
+    approve_digest(bob, shop, pass)
+    assert_reverted_with(
+        redeem(shop, pass, deadline: DL, sig: Bytes::empty()),
+        AlreadyRedeemed { pass },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn refund_after_redeem_reverts() uses (evm: mut Evm) {
+    let (shop, holder, item, pass) = contract_holder_setup()
+    approve_digest(holder, shop, pass)
+    assert!(
+        redeem(shop, pass, deadline: DL, sig: Bytes::empty()).success(),
+    )
+    let _ = try_seller(shop, SellerMsg::Cancel { item })
+    assert_reverted_with(
+        try_exec(
+            holder,
+            target: shop,
+            value: Wei::zero(),
+            data: entry(RefundMsg::Refund { pass }),
+        ),
+        NotRefundable { pass },
+    )
+}
+
+#[test(balance = 1_000_000_000_000_000_000_000_000)]
+fn redeem_after_release_moves_no_money() uses (evm: mut Evm) {
+    let shop = deploy_shop(0)
+    let item = add_item(
+        shop,
+        price: wei(100),
+        supply: 10,
+        cap: 0,
+        release_at: Timestamp::from_seconds(0),
+    )
+    let holder = actor(7)
+    let pass = ingot::testkit::buy(holder, shop, item, qty: 1, value: wei(100))
+    let _ = try_seller(shop, SellerMsg::Release { item })
+    approve_digest(holder, shop, pass)
+    let released: Wei = evm
+        .call(
+            addr: shop,
+            gas: GAS,
+            value: Wei::zero(),
+            message: SellerMsg::Redeem { pass, deadline: DL, sig: Bytes::empty() },
+        )
+    assert!(released == Wei::zero())
+    assert!(books(shop).seller_available == wei(100))
+    assert_books_exact(shop)
+}

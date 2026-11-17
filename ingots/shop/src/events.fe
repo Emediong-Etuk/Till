@@ -1,0 +1,151 @@
+//! Shop events. ERC-721 `Transfer`, `Approval` and `ApprovalForAll` keep the
+//! standard signatures so wallets and explorers index the passes.
+
+#[event]
+pub struct Transfer {
+    #[indexed]
+    pub from: Address,
+    #[indexed]
+    pub to: Address,
+    #[indexed]
+    pub tokenId: u256,
+}
+
+#[event]
+pub struct Approval {
+    #[indexed]
+    pub owner: Address,
+    #[indexed]
+    pub approved: Address,
+    #[indexed]
+    pub tokenId: u256,
+}
+
+#[event]
+pub struct ApprovalForAll {
+    #[indexed]
+    pub owner: Address,
+    #[indexed]
+    pub operator: Address,
+    pub approved: bool,
+}
+
+#[event]
+pub struct ItemAdded {
+    #[indexed]
+    pub item: u256,
+    pub price: Wei,
+    pub supply: u256,
+    pub max_per_wallet: u256,
+    pub release_at: Timestamp,
+    pub kind: u8,
+    pub label: u256,
+}
+
+#[event]
+pub struct ItemUpdated {
+    #[indexed]
+    pub item: u256,
+    pub price: Wei,
+    pub supply: u256,
+    pub max_per_wallet: u256,
+    pub release_at: Timestamp,
+    pub status: u8,
+}
+
+#[event]
+pub struct ItemCancelled {
+    #[indexed]
+    pub item: u256,
+    pub escrow: Wei,
+}
+
+#[event]
+pub struct ItemReleased {
+    #[indexed]
+    pub item: u256,
+    pub amount: Wei,
+}
+
+#[event]
+pub struct Purchased {
+    #[indexed]
+    pub buyer: Address,
+    #[indexed]
+    pub to: Address,
+    #[indexed]
+    pub item: u256,
+    pub qty: u256,
+    pub first_pass: u256,
+    pub paid: Wei,
+}
+
+#[event]
+pub struct Tipped {
+    #[indexed]
+    pub from: Address,
+    pub amount: Wei,
+}
+
+#[event]
+pub struct Noted {
+    #[indexed]
+    pub from: Address,
+    pub text: u256,
+}
+
+#[event]
+pub struct Redeemed {
+    #[indexed]
+    pub pass: u256,
+    #[indexed]
+    pub holder: Address,
+    pub released: Wei,
+}
+
+#[event]
+pub struct Refunded {
+    #[indexed]
+    pub pass: u256,
+    #[indexed]
+    pub to: Address,
+    pub amount: Wei,
+}
+
+#[event]
+pub struct Withdrawn {
+    #[indexed]
+    pub to: Address,
+    pub amount: Wei,
+}
+
+#[event]
+pub struct Swept {
+    #[indexed]
+    pub to: Address,
+    pub amount: Wei,
+}
+
+#[event]
+pub struct OwnershipTransferStarted {
+    #[indexed]
+    pub owner: Address,
+    #[indexed]
+    pub pending: Address,
+}
+
+#[event]
+pub struct OwnershipTransferred {
+    #[indexed]
+    pub previous: Address,
+    #[indexed]
+    pub owner: Address,
+}
+
+#[event]
+pub struct BatchSettled {
+    #[indexed]
+    pub payer: Address,
+    pub paid: Wei,
+    pub entries: u256,
+}

@@ -9,9 +9,9 @@
 //!   the whole batch. Each entry is `DELEGATECALL`ed to the contract and sees
 //!   the same `msg.value`, but `begin` ignores it while a batch is open, so
 //!   the payment is counted exactly once. `close_batch()` requires the budget
-//!   to be zero and clears all four slots.
+//!   to be zero and clears every slot.
 //!
-//! Every path that leaves a frame successfully leaves the four slots at zero,
+//! Every path that leaves a frame successfully leaves every slot at zero,
 //! so a later frame in the same transaction (the next ERC-4337 UserOperation,
 //! a router's second call) starts from a clean till. A path that reverts also
 //! reverts its transient writes.
@@ -24,7 +24,7 @@ use super::effect::Till
 pub struct TillState { pub left: Wei, pub batching: bool, pub entries: u256 }
 
 /// What a metered batch settled: who paid and how many metered entries ran.
-pub struct BatchReceipt { pub payer: Address, pub entries: u256 }
+pub struct BatchReceipt { pub payer: Address, pub paid: Wei, pub entries: u256 }
 
 impl Copy for BatchReceipt {}
 
@@ -32,6 +32,7 @@ pub struct TransientTill {
     budget: TSlot<Wei>,
     batching: TSlot<bool>,
     payer: TSlot<Address>,
+    paid: TSlot<Wei>,
     entries: TSlot<u256>,
 }
 
@@ -76,6 +77,7 @@ impl TransientTill {
         self.batching.write(true)
         self.budget.write(paid)
         self.payer.write(payer)
+        self.paid.write(paid)
         self.entries.write(0)
     }
 
@@ -86,10 +88,15 @@ impl TransientTill {
         if left != Wei::zero() {
             revert_error(Unspent { left })
         }
-        let receipt = BatchReceipt { payer: self.payer.read(), entries: self.entries.read() }
+        let receipt = BatchReceipt {
+            payer: self.payer.read(),
+            paid: self.paid.read(),
+            entries: self.entries.read(),
+        }
         self.budget.clear()
         self.batching.clear()
         self.payer.clear()
+        self.paid.clear()
         self.entries.clear()
         receipt
     }

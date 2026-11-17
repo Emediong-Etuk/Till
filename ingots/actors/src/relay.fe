@@ -1,0 +1,54 @@
+//! `Relay`: makes two calls to the same target inside one of its own call
+//! frames, like a router or two ERC-4337 UserOperations in one bundle. The
+//! first carries value and must succeed; the second carries none, and the
+//! relay records whether it succeeded and its revert selector.
+use std::abi::Bytes
+
+pub msg RelayMsg {
+    #[selector = sol("pair(address,uint256,bytes,bytes)")]
+    Pair { target: Address, value: Wei, first: Bytes, second: Bytes } -> bool,
+    #[selector = sol("lastSelector()")]
+    LastSelector -> u256,
+}
+
+pub contract Relay uses (ctx: Ctx, call: mut Call) {
+    mut last_selector: u256,
+
+    #[payable]
+    init()
+    {}
+
+    recv {
+        #[payable]
+        RelayMsg::Pair { target, value, first, second } -> bool
+        uses (ctx, mut call, mut last_selector)
+        {
+            let a = call.try_call_raw(addr: target, gas: ctx.gas(), value, args: first.span())
+            if !a.success() {
+                std::evm::bubble_last_revert()
+            }
+            let b = call
+                .try_call_raw(
+                    addr: target,
+                    gas: ctx.gas(),
+                    value: Wei::zero(),
+                    args: second.span(),
+                )
+            if b.success() {
+                last_selector = 0
+            } else if b.returndata_len() >= 4 {
+                last_selector = b.returndata().word_at(0) >> 224
+            } else {
+                last_selector = 0xffffffff
+            }
+            b.success()
+        }
+
+        RelayMsg::LastSelector -> u256 uses (last_selector) {
+            last_selector
+        }
+
+        #[payable]
+        _ {}
+    }
+}

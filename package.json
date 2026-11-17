@@ -1,0 +1,20 @@
+{
+  "name": "till-monorepo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "vectors": "tsx scripts/gen-vectors.ts",
+    "e2e": "vitest run --config e2e/vitest.config.ts",
+    "deploy": "tsx scripts/deploy.ts",
+    "exploit": "tsx scripts/demo-exploit.ts",
+    "report": "tsx scripts/report.ts",
+    "verify-bytecode": "tsx scripts/verify-bytecode.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "tsx": "4.19.2",
+    "typescript": "5.7.2",
+    "viem": "2.21.55",
+    "vitest": "2.1.8"
+  }
+}

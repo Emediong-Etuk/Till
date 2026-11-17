@@ -1,0 +1,77 @@
+//! Shop errors. All appear in `Shop.abi.json`, so the app decodes them into
+//! plain-language messages.
+
+#[error]
+pub struct NotOwner { pub caller: Address }
+
+#[error]
+pub struct NotPendingOwner { pub caller: Address }
+
+#[error]
+pub struct UnknownItem { pub item: u256 }
+
+#[error]
+pub struct ItemNotActive { pub item: u256, pub status: u8 }
+
+#[error]
+pub struct ZeroQuantity {}
+
+#[error]
+pub struct ZeroAmount {}
+
+#[error]
+pub struct SoldOut { pub item: u256, pub remaining: u256 }
+
+#[error]
+pub struct WalletCapExceeded { pub item: u256, pub cap: u256, pub held: u256 }
+
+#[error]
+pub struct InvalidRecipient {}
+
+#[error]
+pub struct InvalidItem {}
+
+#[error]
+pub struct SupplyBelowSold { pub item: u256, pub sold: u256 }
+
+#[error]
+pub struct CannotShortenRelease { pub item: u256, pub release_at: Timestamp }
+
+#[error]
+pub struct TooEarly { pub item: u256, pub release_at: Timestamp }
+
+#[error]
+pub struct NotRefundable { pub pass: u256 }
+
+#[error]
+pub struct UnknownPass { pub pass: u256 }
+
+#[error]
+pub struct AlreadyRedeemed { pub pass: u256 }
+
+#[error]
+pub struct SignatureExpired { pub deadline: Timestamp }
+
+#[error]
+pub struct BadSignature { pub holder: Address }
+
+#[error]
+pub struct NotAuthorized { pub caller: Address, pub pass: u256 }
+
+#[error]
+pub struct WrongFrom { pub pass: u256, pub owner: Address }
+
+#[error]
+pub struct UnsafeRecipient { pub to: Address }
+
+#[error]
+pub struct InvalidOwner {}
+
+#[error]
+pub struct NothingToWithdraw {}
+
+#[error]
+pub struct PayoutFailed { pub to: Address, pub amount: Wei }
+
+#[error]
+pub struct PayoutLocked {}
