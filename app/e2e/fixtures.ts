@@ -1,4 +1,4 @@
-import { type Browser, type BrowserContext, type Page, expect } from "@playwright/test";
+import { type Browser, type BrowserContext, type Page, expect, test as base } from "@playwright/test";
 import { createPublicClient, createWalletClient, defineChain, http, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { readFileSync } from "node:fs";
@@ -13,6 +13,35 @@ export const chain = defineChain({ id: 31337, name: "anvil", nativeCurrency: { n
 export const client = createPublicClient({ chain, transport: http() });
 export const seller = createWalletClient({ account: privateKeyToAccount(SELLER_KEY), chain, transport: http() });
 
+/**
+ * Make `page.goto` and `page.reload` wait until React has hydrated the page
+ * (`<html data-hydrated>`), so a test never types into or clicks an element
+ * before its handlers exist. Cold dev-server routes made this a real race.
+ */
+export function hydrating(page: Page): Page {
+  const goto = page.goto.bind(page);
+  const reload = page.reload.bind(page);
+  const ready = () => page.waitForSelector("html[data-hydrated]", { state: "attached", timeout: 60_000 });
+  page.goto = async (...args: Parameters<Page["goto"]>) => {
+    const r = await goto(...args);
+    await ready();
+    return r;
+  };
+  page.reload = async (...args: Parameters<Page["reload"]>) => {
+    const r = await reload(...args);
+    await ready();
+    return r;
+  };
+  return page;
+}
+
+/** `test` whose built-in `page` waits for hydration after navigating. */
+export const test = base.extend({
+  page: async ({ page }, use) => {
+    await use(hydrating(page));
+  },
+});
+
 /** A browser context whose burner wallet is `key` (fresh if omitted). */
 export async function walletContext(browser: Browser, key: Hex = generatePrivateKey()): Promise<{ ctx: BrowserContext; page: Page; key: Hex; address: Address }> {
   const ctx = await browser.newContext();
@@ -20,12 +49,18 @@ export async function walletContext(browser: Browser, key: Hex = generatePrivate
     if (!window.localStorage.getItem("till.burner.v1")) window.localStorage.setItem("till.burner.v1", JSON.stringify(k));
   }, key);
   await ctx.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
-  const page = await ctx.newPage();
+  const page = hydrating(await ctx.newPage());
   return { ctx, page, key, address: privateKeyToAccount(key).address };
 }
 
 export async function fund(page: Page) {
-  await page.getByTestId("wallet-button").click();
+  // On a cold dev server the first click can land before hydration attaches
+  // the handler, so open the wallet menu until it is actually open.
+  const menu = page.getByTestId("wallet-menu");
+  await expect(async () => {
+    if (!(await menu.isVisible())) await page.getByTestId("wallet-button").click();
+    await expect(menu).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 60_000 });
   await page.getByTestId("faucet-button").click();
   await expect(page.getByText("Test ETH received")).toBeVisible();
   await page.getByTestId("wallet-button").click();

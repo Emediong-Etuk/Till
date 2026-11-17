@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
-import { walletContext, fund, expectSuccess } from "./fixtures";
+import { expect } from "@playwright/test";
+import { walletContext, fund, expectSuccess, test } from "./fixtures";
 
 test("a seller creates a shop, adds 3 items in one tx, and gets a share link and poster", async ({ browser }) => {
   const { ctx, page } = await walletContext(browser);

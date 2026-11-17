@@ -1,10 +1,10 @@
-import { expect, test } from "@playwright/test";
-import { walletContext, fund, client } from "./fixtures";
+import { expect } from "@playwright/test";
+import { walletContext, fund, client, hydrating, test } from "./fixtures";
 import type { Address } from "viem";
 
 test("a burner wallet is created silently and survives a reload", async ({ browser }) => {
   const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+  const page = hydrating(await ctx.newPage());
   await page.goto("/");
   await expect(page.getByTestId("wallet-button")).toContainText("0x");
   await page.getByTestId("wallet-button").click();

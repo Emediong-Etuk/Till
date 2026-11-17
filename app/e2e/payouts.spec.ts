@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
-import { expectSuccess, fund, walletContext } from "./fixtures";
+import { expect } from "@playwright/test";
+import { expectSuccess, fund, walletContext, test } from "./fixtures";
 
 test("seller withdraws, cancels an item, and the buyer refunds 100% from a banner", async ({ browser }) => {
   // Fresh shop owned by this test's seller burner.

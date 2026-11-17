@@ -15,6 +15,7 @@ export default defineConfig({
   use: {
     baseURL: process.env.APP_URL ?? "http://localhost:3000",
     trace: "off",
+    actionTimeout: 30_000,
     launchOptions: exe ? { executablePath: exe } : {},
   },
   projects: [
