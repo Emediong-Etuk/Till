@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
-import { DEMO_SHOP, SELLER_KEY, expectSuccess, fund, walletContext } from "./fixtures";
+import { expect } from "@playwright/test";
+import { DEMO_SHOP, SELLER_KEY, expectSuccess, fund, walletContext, test } from "./fixtures";
 
 test("check-in: the holder's signed code is verified at the door, redeemed once, then shows as used", async ({ browser }) => {
   const buyer = await walletContext(browser);

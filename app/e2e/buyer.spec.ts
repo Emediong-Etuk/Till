@@ -1,6 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
 import { formatEther, parseEther, type Address } from "viem";
-import { DEMO_SHOP, client, expectSuccess, fund, seller, shopAbi, shopItemPrice, walletContext } from "./fixtures";
+import { DEMO_SHOP, client, expectSuccess, fund, seller, shopAbi, shopItemPrice, walletContext, test } from "./fixtures";
 
 test("Tobi buys 2 tickets, a shirt and a tip with one tap and sees his passes", async ({ browser }) => {
   const { ctx, page, address } = await walletContext(browser);

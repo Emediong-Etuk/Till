@@ -1,48 +1,37 @@
 # Video scripts
 
-Recording setup: `scripts/record-demo.md`. Browser at 390×844 (phone) for the
-app, a terminal at 120 columns for code and tests.
+Both videos were made from the real app and repository. Phone scenes are
+Playwright recordings of the app on a local anvil chain (`make demo`); code and
+test cards are rendered from the files they name. The narration below is what
+is spoken (a local text-to-speech voice) and burned in as captions.
 
-## 1. Pitch video (hard limit 3:00)
+## 1. Pitch (2:09)
 
-| Time | Shot | Voice-over |
+| Time | On screen | Narration |
 |---|---|---|
-| 0:00–0:08 | Phone: Till home, "Every wei counted once." | "Ada runs a monthly dev meetup in Uyo. She sells two ticket tiers and a T-shirt." |
-| 0:08–0:20 | Phone: storefront, Tobi adds 2 tickets, a shirt, a tip | "Tobi wants all of it in one tap, one payment, on his phone, with no wallet to install." |
-| 0:20–0:35 | Editor: `ingots/std/src/evm/multicall.fe`, the `#[payable]` example and the warning highlighted | "Fe's standard multicall is how you batch calls. Its own example is payable, and its own docs warn: every entry sees the same msg.value." |
-| 0:35–1:00 | Phone: `/lab`, tap "Run the attack on NaiveShop"; balances drop | "So Mallory pays 0.001 ETH once, batches five buys, refunds five passes. She walks away with other buyers' money. Same bug class as the 2021 MISO disclosure." |
-| 1:00–1:12 | Phone: fresh visitor, wallet appears, "Get test ETH" | "Here's Till. The buyer gets a test wallet and test ETH with one tap." |
-| 1:12–1:35 | Phone: cart → Review sheet (line items, exact total) → Pay → "Paid" | "Two tickets, a shirt, a tip. One transaction, one exact payment. A wei too much or too little and the contract refuses." |
-| 1:35–1:50 | Phone: My passes → pass QR | "Passes arrive as NFTs. At the door, the pass shows a code signed by Tobi's key." |
-| 1:50–2:10 | Second phone: door page scans → Valid → Admit; scan again → Already used | "Ada scans it. The contract checks Tobi's signature, marks the pass used, and only then moves his money from escrow to Ada." |
-| 2:10–2:20 | Admin: Withdraw | "Ada withdraws. If she'd cancelled, Tobi could refund exactly what he paid." |
-| 2:20–2:30 | `/lab`: attack on the Till shop → `Overspend` | "Mallory's exact attack on a Till shop: reverted, Overspend, nothing charged." |
-| 2:30–2:50 | Editor: `pub fn purchase(...) uses (register: mut Till, catalog: mut Catalog, ...)`; then the compile error from `tests/compile_fail` | "Why Fe? The purchase logic has a Till effect and no Ctx and no Call. The compiler proves it can't read msg.value and can't run foreign code mid-batch. Not a code review: a type error." |
-| 2:50–3:00 | Terminal: `make test` summary; README | "249 Fe tests, 960 random batches, 48 end-to-end and 17 UI tests. Till: every wei counted once." |
+| 0:00–0:11 | title card; phone: Ada sells tickets and merch with one link | Ada runs a monthly developer meetup in Uyo. She sells two ticket tiers and a T-shirt. Tobi wants all of it, in one tap, on his phone, with no wallet to install. |
+| 0:11–0:30 | std multicall source and its warning; phone: One payment, five entries, five passes | To batch calls, Fe's standard library offers multicall, and its own example makes the batch payable. Its documentation warns that every batched entry sees the same msg.value. So a shop that checks the payment inside each entry can be paid once and deliver many times. |
+| 0:30–0:48 | phone: Pay once. Refund five times. | Here is that bug, live. Mallory pays one ticket's price, batches five purchases, then refunds all five passes, and walks away with other buyers' money. It is the same bug class samczsun disclosed in SushiSwap's MISO auction in 2021. |
+| 0:48–0:58 | phone: No wallet to install | Till fixes this. Tobi opens Ada's shop link. A test wallet is created for him silently, and one tap tops it up with test ETH. |
+| 0:58–1:12 | phone: One transaction. One exact payment. | He picks two tickets, a shirt and a tip. The receipt shows the exact total, read from the chain. One tap, one transaction, one payment. A single wei too much or too little, and the contract refuses. |
+| 1:12–1:30 | phone: Signed by the holder's own key; phone: Only the holder can release the escrow | His passes arrive straight away. At the door, his pass shows a code signed by his own key. Ada checks it, the contract verifies his signature, and only then moves his payment from escrow to her. Check it again, and it is already used. |
+| 1:30–1:41 | phone: Pull payments, behind a lock; phone: Same attack on a Till shop: Overspend | Ada withdraws her earnings. And Mallory's exact attack against a Till shop? It reverts with Overspend. Nothing is charged, and nothing is minted. |
+| 1:41–1:57 | `purchase` signature; compile errors: missing effect Ctx / Call | Why Fe? The purchase logic declares a Till effect, and no context or call effect. So the compiler proves it can never read msg.value, and never run outside code in the middle of a batch. Break that rule, and it does not compile. |
+| 1:57–2:09 | evidence card | Two hundred forty-nine Fe tests, nine hundred sixty random batches, end-to-end and browser tests, and a live deployment on Sepolia. Till. Every wei, counted once. |
 
-## 2. Technical walkthrough (6–10 minutes)
+## 2. Technical walkthrough (6:33)
 
-1. **Architecture (0:00–1:00).** The Mermaid diagram in `docs/ARCHITECTURE.md`:
-   `till` library, `shop` product, `naive` and `actors` for tests, app and scripts.
-2. **The Till API and state machine (1:00–2:30).** `ingots/till/src/effect.fe`
-   (`trait Till`, `charge`), `transient.fe` (`begin`/`end`/`open_batch`/`close_batch`/
-   `forbid_in_batch`), the state diagram. Point out the five `TSlot`s and that
-   every success path clears them.
-3. **Effects as the guarantee (2:30–4:00).** `ingots/shop/src/sales.fe`:
-   `purchase` is `uses (register: mut Till, catalog, passes, books, log)`. Live:
-   add `let x = ctx.value()` → `undefined variable ctx`; call a helper with
-   `mut Call` → `missing effect Call`. Then `./tests/compile_fail/run.sh`.
-4. **Transient storage and cross-frame (4:00–5:00).** `till/src/tests/evm.fe`
-   `cross_frame_through_relay`, `shop/src/tests/batch.fe`
-   `cross_frame_relay_cannot_reuse_batch_budget`; explain "one fe test = one
-   transaction".
-5. **EIP-712 check-in (5:00–6:00).** `checkin.fe`, `scripts/gen-vectors.ts`,
-   `vectors.fe`, the high-s and compact tests, ERC-1271 holder.
-6. **On-chain view (6:00–7:00).** Explorer view of the batched checkout tx:
-   internal `DELEGATECALL`s to self, `Transfer` ×3, `Purchased` ×2, `Tipped`,
-   `BatchSettled{entries: 3}`. (Sepolia link from `deployments/sepolia.json`;
-   locally, `cast run <hash> --rpc-url http://127.0.0.1:8545`.)
-7. **Tests (7:00–8:30).** `make test` live; `prop_shop_seed_*` and the
-   `ShopPropFail{seed, case}` replay story; `docs/TEST_REPORT.md` tables and the
-   gas table (Till ≈ 1.2k gas/entry).
-8. **Limitations (8:30–9:30).** README → Limitations.
+| Time | On screen | Narration |
+|---|---|---|
+| 0:00–0:34 | title card; workspace map | This is a technical walkthrough of Till, built with Fe version 26.6. The repository is a Fe workspace with four ingots. Till is the library. Shop is the product built on it: a shop factory, and one shop contract per seller, whose passes are ERC-721 tokens. Naive is a deliberately vulnerable shop, and actors holds test-only contracts that play users, attackers and relays. A Next.js app, end-to-end tests and scripts sit on top. |
+| 0:34–1:04 | exploit regression test; `demo-exploit.ts` output, naive vs Till | Start with the bug. Standard multicall delegate-calls every entry back into the contract, and delegatecall keeps the original msg.value. So a naive buy handler that checks msg.value against the price passes that check once per entry. The regression test plays the attacker: honest buyers pay nine ETH, Mallory pays one, batches five buys and refunds five passes, and the shop ends up four ETH short. The same sequence against Till's shop reverts with Overspend. |
+| 1:04–1:31 | adjacent problems | Two related problems come with it. Because a non-payable handler reverts when it runs inside a paid batch, developers mark every handler payable, and stray ETH sent to the wrong handler gets stuck. And if any batched handler calls out, attacker code runs while the batch's budget is live. Till handles both: leftover value reverts with Unspent, and handlers that pay out refuse to run inside a batch. |
+| 1:31–2:13 | phone: One budget for the whole batch; budget state machine; `begin` / `end` source | Till turns msg.value into a budget. The Till trait has three methods: take, left, and in batch. Transient Till keeps the budget in EIP-1153 transient storage. A metered handler calls begin with the value and the caller, draws with take, and calls end. Outside a batch, begin sets the budget, and end requires it to be exactly zero, or it reverts with Unspent. Metered multicall opens one budget for the whole batch, runs the standard multicall unchanged, and closes it. Inside the batch, begin ignores the repeated value, so the payment is counted once. Every success path clears every slot. |
+| 2:13–2:52 | `purchase` signature; compile errors: missing effect Ctx / Call; compile-fail suite output | Here is the part Fe makes possible. The purchase function declares the Till effect, the catalog, passes, books and log, and nothing else. It has no context effect, so it cannot read msg.value. It has no call effect, so it cannot run foreign code while a budget is live. Watch what happens when a developer tries. Reading msg.value through a helper fails with missing effect Ctx. Refunding dust mid-purchase fails with missing effect Call. Six compile-fail cases like these run in continuous integration, including a control case that must compile. |
+| 2:52–3:29 | cross-frame relay test; ForeignFrame check | Transient storage brings its own trap: it lives for the whole transaction, not one call. A budget left behind could be spent by the next call in the same transaction, like the next user operation in an ERC-4337 bundle. Every Fe test runs as one transaction, which makes this testable. A relay contract pays one batch, then tries a zero-value buy in the same frame, and gets Overspend. As defense in depth, begin also rejects any frame whose caller is not the batch payer, with Foreign Frame. |
+| 3:29–4:04 | EIP-712 check-in digest; viem-generated vectors | On top of the library, each shop holds every pass's price in escrow, per item. Money moves to the seller only when the holder signs an EIP-712 check-in, or after the release time. If the seller cancels, holders refund exactly what each pass paid. The check-in digest is tested against vectors generated with viem: full and compact signatures, a rejected high-s twin, other chains, other shops, expired deadlines, and smart-wallet holders through ERC-1271. |
+| 4:04–4:33 | phone: One transaction. One exact payment.; phone: Only the holder can release the escrow; phone: Same attack on a Till shop: Overspend | Here is the product a judge can try. A buyer fills a cart with tickets, merch and a tip, reviews a receipt with the exact total, and pays once. At the door, the seller checks the pass's signed code and redeems it on-chain, and the same code shows as already used the second time. In the security lab, the double-count attack that drains the naive shop reverts on the Till shop with Overspend. |
+| 4:33–4:55 | Sepolia batched checkout, decoded | Here is a batched checkout on Sepolia, decoded from its receipt. One transaction carries one payment of four thousandths of an ETH. Three passes are minted, two purchases and a tip are recorded, and Batch Settled reports three metered entries. A verify script confirms the deployed bytecode matches a fresh build. |
+| 4:55–5:35 | test layers; gas table | The test suite has five layers. Forty-three pure unit tests run against the in-memory ledger. One hundred ninety-four EVM integration tests cover every handler and every threat. Twelve seeded property tests throw nine hundred sixty random carts at the contracts, each mutated by a wei too much, a wei too little, a duplicate entry, a nested batch or a forbidden handler, and check conservation and clean transient state after every case. Forty-eight end-to-end tests run real bytecode on anvil, and twenty browser tests drive the app. Till itself costs about twelve hundred gas per batched entry. |
+| 5:35–6:09 | five-step adoption diff | Adopting Till in another Fe contract takes five steps. Add a transient till field. In each payable handler, replace the msg.value check with begin, move the logic into a function that declares the Till effect and draws with take or charge, then call end. Swap multicall for metered multicall. Put forbid in batch first in any handler that sends ETH. And remove payable from handlers that never take value. The same API could ship in Fe's standard library, next to multicall. |
+| 6:09–6:33 | limitations; end card | Limits, honestly. Fe is pre-production and this code is unaudited, so it is testnet only. Escrow protects buyers until the release time, not after. Per-wallet caps are Sybil-weak. And Till only protects handlers that use it, which is why the next step is proposing it to the Fe standard library, as metered multicall. Thanks for watching. |

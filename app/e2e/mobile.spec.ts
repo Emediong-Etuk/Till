@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
-import { DEMO_SHOP } from "./fixtures";
+import { expect } from "@playwright/test";
+import { DEMO_SHOP, test } from "./fixtures";
 
 for (const path of ["/", `/s/${DEMO_SHOP}`, "/lab", "/passes", "/new"]) {
   test(`mobile: ${path} fits the screen`, async ({ page }, info) => {

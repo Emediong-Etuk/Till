@@ -31,11 +31,13 @@ export function Ticker({ value, decimals = 0, prefix = "", suffix = "", classNam
   const ref = useRef<HTMLSpanElement>(null);
   const seen = useInView(ref, { once: true });
   const reduce = useReducedMotion();
-  const [shown, setShown] = useState(reduce ? value : 0);
+  // Server and first client render agree (0), so hydration never mismatches;
+  // reduced motion then jumps straight to the value.
+  const [shown, setShown] = useState(0);
   const from = useRef(0);
   useEffect(() => {
-    if (!seen) return;
     if (reduce) return setShown(value);
+    if (!seen) return;
     const c = animate(from.current, value, { duration: 1.1, ease, onUpdate: (v) => setShown(v) });
     from.current = value;
     return () => c.stop();
