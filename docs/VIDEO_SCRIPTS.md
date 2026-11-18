@@ -7,6 +7,8 @@ is spoken (a local text-to-speech voice) and burned in as captions.
 
 ## 1. Pitch (2:09)
 
+Watch: https://youtu.be/szaGZ2eNbak
+
 | Time | On screen | Narration |
 |---|---|---|
 | 0:00–0:11 | title card; phone: Ada sells tickets and merch with one link | Ada runs a monthly developer meetup in Uyo. She sells two ticket tiers and a T-shirt. Tobi wants all of it, in one tap, on his phone, with no wallet to install. |
@@ -20,6 +22,8 @@ is spoken (a local text-to-speech voice) and burned in as captions.
 | 1:57–2:09 | evidence card | Two hundred forty-nine Fe tests, nine hundred sixty random batches, end-to-end and browser tests, and a live deployment on Sepolia. Till. Every wei, counted once. |
 
 ## 2. Technical walkthrough (6:33)
+
+Watch: https://youtu.be/jGKzgv7sKDo
 
 | Time | On screen | Narration |
 |---|---|---|
