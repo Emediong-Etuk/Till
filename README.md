@@ -9,6 +9,8 @@ checkout app that depends on it.
 |---|---|
 | Fe version | `fe 26.6.0 (5b3f96a)` (`FE_VERSION: v26.6.0` in CI) |
 | Manifest | [`fe.toml`](fe.toml) (workspace) → `ingots/{till,shop,naive,actors}/fe.toml` |
+| Live app | https://app-eight-gamma-97.vercel.app (Sepolia, no wallet needed) |
+| Videos | [Pitch, 2:09](https://youtu.be/szaGZ2eNbak) · [Technical walkthrough, 6:33](https://youtu.be/jGKzgv7sKDo) |
 | Try it | `make setup && make test && make demo` → http://localhost:3000 |
 | Evidence | [`docs/TEST_REPORT.md`](docs/TEST_REPORT.md): 249 Fe tests (960 random batches), 6 negative compile tests, 48 E2E on real bytecode, 20 Playwright tests |
 | License | Apache-2.0 |
@@ -231,8 +233,9 @@ and passed.
   Visit `/` to sell, `/s/<shop>` to buy, `/passes`, `/s/<shop>/door`, `/lab`.
 - **CLI exploit:** `npx tsx scripts/demo-exploit.ts --target naive` drains
   NaiveShop; `--target till` reverts with `Overspend(1000000000000000, 0)`.
-- **Videos:** pitch (≤ 3:00) and technical walkthrough, scripted in
-  [docs/VIDEO_SCRIPTS.md](docs/VIDEO_SCRIPTS.md) (narration and shot list as recorded). _Links: to be added after upload._
+- **Videos:** [pitch (2:09)](https://youtu.be/szaGZ2eNbak) and
+  [technical walkthrough (6:33)](https://youtu.be/jGKzgv7sKDo); narration and
+  shot list in [docs/VIDEO_SCRIPTS.md](docs/VIDEO_SCRIPTS.md).
 - **Live app:** https://app-eight-gamma-97.vercel.app (Sepolia).
 - **Sepolia** (deployed with `make deploy-sepolia`; on-chain code verified
   against a fresh build with `scripts/verify-bytecode.ts`):
