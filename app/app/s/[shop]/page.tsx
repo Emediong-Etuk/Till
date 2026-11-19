@@ -135,11 +135,11 @@ export default function Storefront({ params }: { params: Promise<{ shop: string 
                   <p className="text-[11px] text-ink/45">Escrow until {when(it.releaseAt)}</p>
                 </div>
                 <div className="flex items-center gap-1.5 rounded-2xl bg-paper-2 p-1" aria-label={`Quantity of ${it.label}`}>
-                  <motion.button whileTap={{ scale: 0.9 }} className="grid h-11 w-11 place-items-center rounded-xl bg-white text-xl shadow-sm disabled:opacity-35" aria-label="Fewer" disabled={!active || q === 0} onClick={() => setQty(it.id, q - 1)}>−</motion.button>
+                  <motion.button whileTap={{ scale: 0.9 }} className="grid h-12 w-12 place-items-center rounded-xl bg-white text-xl shadow-sm disabled:opacity-35" aria-label="Fewer" disabled={!active || q === 0} onClick={() => setQty(it.id, q - 1)}>−</motion.button>
                   <span className="num w-7 text-center text-lg font-bold" data-testid={`qty-${it.id}`}><Flip k={q}>{q}</Flip></span>
                   <motion.button
                     whileTap={{ scale: 0.9 }}
-                    className="grid h-11 w-11 place-items-center rounded-xl bg-ink text-xl text-white shadow-sm disabled:opacity-35"
+                    className="grid h-12 w-12 place-items-center rounded-xl bg-ink text-xl text-white shadow-sm disabled:opacity-35"
                     aria-label="More"
                     data-testid={`add-${it.id}`}
                     disabled={!active || BigInt(q) >= left || (it.maxPerWallet > 0n && BigInt(q) >= it.maxPerWallet)}
